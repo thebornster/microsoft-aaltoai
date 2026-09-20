@@ -10,9 +10,9 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 
 **The feature list is complete; the project is not yet “win-ready.”** Do not start Foundry Local or add broad new features. The next work is a short, ordered hardening program designed to remove judge-visible failure modes:
 
-1. **P0 — Demo reliability and truthful evidence.** Make one command perform preflight, start the single gateway process, verify `/healthz` and `/mcp/tools`, reset only demo state safely, and print the exact benign, DENY, REVIEW/approval, resume, and ledger-verification commands. Add a local fallback path that does not require Azure or Teams if the live service is unavailable. Keep the live demo as the real Azure agent, but never depend on improvising shell state during judging. **← NEXT: not started.**
-2. ~~**P0 — Use the PDF as the runtime source.**~~ **Done this checkpoint** — see below.
-3. **P1 — Close the protocol honesty gap.** Either implement the smallest real MCP-compatible transport surface required by the target spec, or explicitly relabel the product everywhere as an “MCP-compatible gateway prototype.” Do not claim literal MCP server compatibility until a real MCP client can discover tools and complete the MRTR retry against it. Add an integration test for the actual wire shape.
+1. ~~**P0 — Demo reliability and truthful evidence.**~~ **Done this checkpoint** — see below.
+2. ~~**P0 — Use the PDF as the runtime source.**~~ **Done previous checkpoint** — see below.
+3. **P1 — Close the protocol honesty gap.** **← NEXT.** Either implement the smallest real MCP-compatible transport surface required by the target spec, or explicitly relabel the product everywhere as an “MCP-compatible gateway prototype.” Do not claim literal MCP server compatibility until a real MCP client can discover tools and complete the MRTR retry against it. Add an integration test for the actual wire shape.
 4. **P1 — Make state and identity claims precise.** Keep the in-memory implementation for the demo, but add a durable state boundary (SQLite is sufficient for the hackathon) for session taint, approvals, and consumed nonces, with restart/replay tests. Derive `agent_id` from an authenticated boundary in the production-shaped path; retain client-owned IDs only in the demo adapter. Document the single-process limitation and the production migration path.
 5. **P1 — Remove unsafe-looking defaults from the normal path.** Require `RAJA_SERVER_KEY` and approval authentication in production mode; fail closed when absent. Keep demo defaults only behind an explicit `RAJA_DEMO_MODE=1`, visibly labeled as demo-only. Add tests for missing-key and unauthorized-approval behavior.
 6. **P1 — Strengthen judge evidence.** Add structured decision metadata to the response (`decision`, `rules_fired`, `regulations`, `sources`, `matched_entities`, `shingle_overlap`) instead of requiring consumers to parse human-readable error text. Add console tests for lineage and residency DOT generation, and a tamper test that demonstrates the exact broken sequence.
@@ -22,6 +22,8 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 **Definition of win-ready:** the judge can run one command, see the real PDF trigger a real agent decision, observe a hard legal DENY, observe an out-of-band REVIEW and exact-call retry, inspect a structured lineage record, tamper with the ledger, and reproduce the failure—without Azure/Teams credentials being the only path to evidence. Every claim in the pitch must be demonstrable or explicitly labeled as a prototype/next step.
 
 ## Build status vs. the design doc's priority list
+
+**Gate 1 done (this checkpoint):** `demo/preflight.py` checks Python deps, config load (with regulation-citation count), PDF readability + injected-instruction presence, `data/` writability, whether the gateway is already up, and reports (non-blocking) whether Azure OpenAI and Teams webhook creds are present — exits 1 on any real failure, 0 otherwise. `demo/local_fallback.py` is a deterministic, non-LLM HTTP client that drives the real gateway (`/mcp/call`, `/approve/*`) through all four demo beats — benign ALLOW, poisoned-bulletin hard DENY, paraphrased REVIEW with human approval and exact-call resume, and a second-use replay of the same `requestState` (this is also the first live confirmation of the anti-replay rejection the STATUS doc previously flagged as unit-tested-only). `demo/run_demo.sh` is the one command: runs preflight, starts `uvicorn gateway.server:app` if not already listening on `/healthz` (waits up to 15s), detects live-agent vs. fallback mode from the Azure env vars, and prints the exact copy-pasteable commands for whichever mode applies plus the ledger-verify step. `RAJA_RESET_DEMO_STATE=1` optionally clears only `data/ledger.jsonl` and `data/agent_pending.json` (never `.env`/`config/`) before starting. New tests: `tests/test_preflight.py` covers the four pure-logic checks (dependencies, config, PDF, ledger writability) under pytest; `demo/local_fallback.py` itself was run live against the actual running gateway process and all four beats passed, `verify_ledger.py` confirmed 99 chain-valid records afterward.
 
 **P0 — all done, live-tested against the real Azure OpenAI agent:**
 - `gateway/taint.py` — w=5 exact shingle index + entity-identifier matcher (employee IDs, emails, operator names)
@@ -50,7 +52,7 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback
 
-Tests: 42 passing, `uv run pytest -q`. No known failing or flaky tests.
+Tests: 46 passing, `uv run pytest -q`. No known failing or flaky tests.
 
 ## Key decisions made (not obvious from re-reading the code)
 
@@ -95,9 +97,13 @@ Not yet tested live: sending a *second* retry with the same already-consumed `re
 
 ## How to resume (exact commands)
 
+For judging day, prefer the one-command path: `./demo/run_demo.sh` (preflight + start gateway if needed + print the exact next commands for whichever mode — live agent or local fallback — is available). `RAJA_RESET_DEMO_STATE=1 ./demo/run_demo.sh` also clears `data/ledger.jsonl`/`data/agent_pending.json` first. If Azure creds aren't set, run `uv run python -m demo.local_fallback` directly — it reproduces all four narrative beats over the real gateway HTTP surface with no LLM involved.
+
+For development/manual control:
+
 ```bash
 cd /Users/borna/hackathon-microsoft
-uv run pytest -q                                    # 40 tests, should be green
+uv run pytest -q                                    # 46 tests, should be green
 uv run python -m eval.run_suite                     # eval suite pass/fail table (12/12 should pass)
 
 # ONE process serves both /mcp/call and /approve/* — do not also start approval.app:app separately

@@ -8,15 +8,15 @@ Demo auth: a shared secret query param. Production: Entra sign-in.
 """
 import os
 
-from fastapi import FastAPI, Form, HTTPException, Query
+from fastapi import APIRouter, FastAPI, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 from approval.tokens import TokenError
-from gateway.server import gateway
+from gateway.instance import gateway
 
 DEMO_SECRET = os.environ.get("RAJA_DEMO_SECRET", "raja-demo")
 
-app = FastAPI(title="Raja Approval")
+router = APIRouter()
 
 
 def _require_secret(secret: str | None) -> None:
@@ -37,7 +37,7 @@ button {{ padding: 0.6rem 1.4rem; margin-right: 0.5rem; font-size: 1rem; border-
 </style></head><body>{body}</body></html>""")
 
 
-@app.get("/approve/{approval_id}", response_class=HTMLResponse)
+@router.get("/approve/{approval_id}", response_class=HTMLResponse)
 def approval_page(approval_id: str, secret: str | None = Query(default=None)) -> HTMLResponse:
     _require_secret(secret)
     approval = gateway.approval_store.get(approval_id)
@@ -61,7 +61,7 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
 """)
 
 
-@app.post("/approve/{approval_id}/decide", response_class=HTMLResponse)
+@router.post("/approve/{approval_id}/decide", response_class=HTMLResponse)
 def decide(
     approval_id: str,
     decision: str = Form(...),
@@ -77,3 +77,10 @@ def decide(
         raise HTTPException(status_code=400, detail=str(e)) from e
     css = "deny" if decision == "rejected" else ""
     return _page(f"<h1 class='{css}'>Recorded: {approval.decision}</h1><p>The agent's next retry will see this outcome.</p>")
+
+
+# Standalone app, kept for isolated testing / running the approval page on
+# its own; the live demo mounts `router` into gateway/server.py's app so
+# both sides share one RajaGateway instance (see gateway/instance.py).
+app = FastAPI(title="Raja Approval")
+app.include_router(router)

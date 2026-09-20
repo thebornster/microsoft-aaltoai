@@ -2,24 +2,18 @@
 2026-07-28 pattern: a tool call either returns a result, an MRTR
 input_required payload, or isError. No Mcp-Session-Id — session_id and
 agent_id are explicit call arguments, per spec.
-"""
-import os
-import pathlib
 
+Also mounts the out-of-band approval page (approval/app.py) on the same
+app so both sides share one RajaGateway instance — see gateway/instance.py.
+"""
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from gateway.gateway import RajaGateway, build_gateway
-
-ROOT = pathlib.Path(__file__).parent.parent
-SERVER_KEY = os.environ.get("RAJA_SERVER_KEY", "dev-only-insecure-key").encode("utf-8")
+from approval.app import router as approval_router
+from gateway.instance import gateway
 
 app = FastAPI(title="Raja Gateway")
-gateway: RajaGateway = build_gateway(
-    config_dir=ROOT / "config",
-    ledger_path=ROOT / "data" / "ledger.jsonl",
-    server_key=SERVER_KEY,
-)
+app.include_router(approval_router)
 
 
 class ToolCallRequest(BaseModel):

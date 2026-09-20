@@ -24,6 +24,8 @@ import httpx
 from demo.tool_schema import build_openai_tools
 from gateway.manifest import ToolManifest
 
+PENDING_STATE_PATH = pathlib.Path(__file__).parent.parent / "data" / "agent_pending.json"
+
 SYSTEM_PROMPT = (
     "You are Marika's maintenance copilot for a factory machinery plant. "
     "You can read maintenance logs, search supplier documents, file supplier "
@@ -84,13 +86,31 @@ class GatewayClient:
         self.base_url = base_url.rstrip("/")
         self.http = httpx.Client(timeout=10.0)
 
-    def call_tool(self, name: str, args: dict, session_id: str, agent_id: str) -> dict:
-        r = self.http.post(
-            f"{self.base_url}/mcp/call",
-            json={"tool": name, "args": args, "session_id": session_id, "agent_id": agent_id},
-        )
+    def call_tool(self, name: str, args: dict, session_id: str, agent_id: str, request_state: str | None = None) -> dict:
+        body = {"tool": name, "args": args, "session_id": session_id, "agent_id": agent_id}
+        if request_state is not None:
+            body["requestState"] = request_state
+        r = self.http.post(f"{self.base_url}/mcp/call", json=body)
         r.raise_for_status()
         return r.json()
+
+
+def _save_pending(messages: list[dict], session_id: str, agent_id: str, deployment: str, tool_name: str, args: dict, request_state: str) -> None:
+    PENDING_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    PENDING_STATE_PATH.write_text(
+        json.dumps(
+            {
+                "messages": messages,
+                "session_id": session_id,
+                "agent_id": agent_id,
+                "deployment": deployment,
+                "tool": tool_name,
+                "args": args,
+                "requestState": request_state,
+            },
+            ensure_ascii=False,
+        )
+    )
 
 
 def run_turn(client, gw: GatewayClient, manifest: ToolManifest, messages: list[dict], session_id: str, agent_id: str, deployment: str) -> None:
@@ -119,6 +139,18 @@ def run_turn(client, gw: GatewayClient, manifest: ToolManifest, messages: list[d
                 req = gw_result["inputRequests"]["raja_approval"]["params"]
                 print(f"\n  RAJA: human approval required.\n  {req['message']}\n  Approve or reject here: {req['url']}\n")
                 tool_result = {"status": "pending_human_approval", "url": req["url"], "message": req["message"]}
+                messages.append({"role": "tool", "tool_call_id": call.id, "content": json.dumps(tool_result, ensure_ascii=False)})
+                _save_pending(
+                    messages=messages,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    deployment=deployment,
+                    tool_name=call.function.name,
+                    args=args,
+                    request_state=gw_result["requestState"],
+                )
+                print(f"  (state saved to {PENDING_STATE_PATH} — after a human decides, run: uv run python -m demo.agent_client --resume)\n")
+                continue
             elif gw_result.get("isError"):
                 print(f"\n  RAJA: blocked — {gw_result['error']}\n")
                 tool_result = {"status": "blocked", "error": gw_result["error"]}
@@ -134,7 +166,45 @@ def run_turn(client, gw: GatewayClient, manifest: ToolManifest, messages: list[d
             )
 
 
+def resume() -> None:
+    if not PENDING_STATE_PATH.exists():
+        print(f"No pending approval state at {PENDING_STATE_PATH}.", file=sys.stderr)
+        sys.exit(1)
+    state = json.loads(PENDING_STATE_PATH.read_text())
+
+    manifest = ToolManifest.from_yaml(pathlib.Path(__file__).parent.parent / "config" / "tools.yaml")
+    gw = GatewayClient(os.environ.get("RAJA_GATEWAY_URL", "http://127.0.0.1:8000"))
+    client, deployment = _azure_client()
+
+    session_id = state["session_id"]
+    agent_id = state["agent_id"]
+    messages = state["messages"]
+
+    print(f"Resuming session={session_id} agent={agent_id} tool={state['tool']}\n")
+    gw_result = gw.call_tool(state["tool"], state["args"], session_id, agent_id, request_state=state["requestState"])
+
+    if gw_result.get("resultType") == "input_required":
+        req = gw_result["inputRequests"]["raja_approval"]["params"]
+        print(f"  RAJA: {req['message']}\n")
+        return
+
+    if gw_result.get("isError"):
+        print(f"  RAJA: {gw_result['error']}\n")
+        outcome = {"status": "blocked", "error": gw_result["error"]}
+    else:
+        outcome = gw_result["result"]
+        print(f"  RAJA: approved and executed — {json.dumps(outcome, ensure_ascii=False)}\n")
+
+    messages.append({"role": "user", "content": f"Here is an update on the pending tool call: {json.dumps(outcome, ensure_ascii=False)}"})
+    PENDING_STATE_PATH.unlink()
+    run_turn(client, gw, manifest, messages, session_id, agent_id, deployment)
+
+
 def main() -> None:
+    if len(sys.argv) > 1 and sys.argv[1] == "--resume":
+        resume()
+        return
+
     prompt = " ".join(sys.argv[1:]) or "Summarise the vibration faults on line 3 and check the supplier bulletin."
     manifest = ToolManifest.from_yaml(pathlib.Path(__file__).parent.parent / "config" / "tools.yaml")
     gw = GatewayClient(os.environ.get("RAJA_GATEWAY_URL", "http://127.0.0.1:8000"))

@@ -147,7 +147,7 @@ Single process on `:8000` (see above). Exact reproduction steps are in "How to r
 Gateway runs on Azure Container Apps at
 https://raja-gateway.proudsea-6cbc91b7.swedencentral.azurecontainerapps.io
 (rg `raja-demo`, env `raja-gateway-env`, ACR `caf99923d346acr`, image tag
-`cream-v2`). The deployed app is `gateway.mcp_app:app` and serves the judge
+`cream-v3`). The deployed app is `gateway.mcp_app:app` and serves the judge
 site: `/` (overview), `/agent` (browser playground), `/dashboard` (live
 ledger view), `/deployment/data`, plus `/mcp` (real MCP), `/mcp/call`, and
 `/approve/*`. All pages use one cream palette. The Container App also sets
@@ -157,6 +157,18 @@ demo instead of the 5-minute production default, and
 There is no persistent volume: every redeploy or restart resets the ledger to
 0 records, so run `./demo/run_deployed_demo.sh` (or the `/agent` cards) right
 before showing `/dashboard`.
+
+Slide-alignment pass (2026-09-20, autonomous session): the brief's
+manufacturing "show it live" item is a lineage panel tracing every answer to
+the log entry it came from, so `/dashboard` rows now expand into a lineage
+view (sources, labels, rules with regulation, human decision, processing
+path, chain hashes) backed by additive fields on `/dashboard/data`. The
+ledger's `processing_path` is read from `RAJA_GATEWAY_LOCATION` (Azure sets
+`azure-container-apps:swedencentral`) so the hosted deployment no longer
+claims `local-edge`. The EU AI Act Art. 14 citation now says "high-risk
+duties phase in 2026-2027" instead of a hard "applies Dec 2027". DEMO.md
+gained a hosted-demo section. Verified live on `cream-v3`: four beats, real
+LLM DENY, lineage panel in Chrome, MCP `tools/list`.
 
 Pre-submission pass (2026-09-20, later session): verified live in Chrome
 (all three `/agent` cards, approval page, approve, Continue, replay) and via

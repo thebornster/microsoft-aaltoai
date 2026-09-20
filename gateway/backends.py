@@ -5,6 +5,8 @@ the hackathon these are fixture data behind the same interface.
 import pathlib
 from typing import Any
 
+import pypdf
+
 DEMO_DIR = pathlib.Path(__file__).parent.parent / "demo"
 
 _MAINTENANCE_LOG: dict[str, list[dict[str, Any]]] = {
@@ -41,7 +43,8 @@ def read_maintenance_log(args: dict[str, Any]) -> dict[str, Any]:
 
 
 def search_supplier_docs(args: dict[str, Any]) -> dict[str, Any]:
-    text = (DEMO_DIR / "bulletin_A19.txt").read_text(encoding="utf-8")
+    reader = pypdf.PdfReader(DEMO_DIR / "bulletin_A19.pdf")
+    text = "\n".join(page.extract_text() for page in reader.pages)
     return {"document_id": "bulletin_A19.pdf", "text": text}
 
 

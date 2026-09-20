@@ -398,6 +398,28 @@ residency-hard-boundary — argument contains data derived from maintenance_log_
 
 "Why should a human approve, if the machine already knows it's bad?" → For residency, they can't — that's a hard deny. For injection, the system knows the data flow is unusual, not that it's wrong; sometimes sending retrieved content outward is the job. The gate exists to route ambiguity to a person, not to outsource certainty.
 
+16. Win plan — execution order and proof gates
+
+The feature list is not the finish line. The winning submission is the one that survives a skeptical judge, a clean-machine run, and a live-demo failure. Work in this order; do not spend remaining time on semantic embeddings before these gates pass.
+
+**Gate 1 — one-command, reproducible demo.** Add a preflight/demo command that checks Python dependencies, configuration, required environment variables, PDF readability, ledger writability, and gateway health. It must start or verify the one gateway process, expose `/mcp/tools`, and print the exact benign, hard-DENY, REVIEW, approval, resume, and ledger-verification steps. Add a deterministic local fallback that exercises the same gateway path without Azure credentials. The real Azure agent remains the primary demo; the fallback prevents an infrastructure outage from becoming a judging failure.
+
+**Gate 2 — the shown artifact is the enforced artifact.** `search_supplier_docs` must extract `demo/bulletin_A19.pdf` at runtime. Add a test that changes or removes the text fixture and proves the PDF path is the source. The white-on-white injection must be visible in the PDF and must be the bytes that become tainted. Never describe a judge-facing PDF while executing a hidden text substitute.
+
+**Gate 3 — honest protocol boundary.** Implement the smallest actual MCP-compatible discovery/call surface needed by a real client, including the MRTR `input_required` and retry path; or change every claim to “MCP-compatible gateway prototype.” The repository must contain an integration test using the chosen wire framing. A shaped JSON endpoint is not literal MCP compatibility.
+
+**Gate 4 — durable state and identity story.** Persist session taint, pending approvals, and consumed nonces behind a small repository interface. SQLite is enough for the hackathon and lets restart/replay tests prove the invariant. The demo adapter may supply explicit handles, but the production-shaped server must derive `agent_id` from authenticated context rather than trusting a client field. State the single-process/demo limitation if a full distributed store is not implemented.
+
+**Gate 5 — secure defaults.** Require a real server key and authenticated approval actor outside an explicit demo mode. Demo mode must be opt-in and visibly labeled. Add tests for missing keys, invalid approval access, expired requestState, changed arguments, and second-use replay. Never ship a normal startup path that silently uses `dev-only-insecure-key` or `raja-demo`.
+
+**Gate 6 — machine-readable proof.** Return structured decision metadata: final decision, every fired rule and regulation, source ids, trust/residency labels, matched entities, shingle overlap, destination, and processing path. Keep human-readable messages for the agent, but do not make the eval or console parse prose. Add console tests and a tamper demonstration that names the broken sequence.
+
+**Gate 7 — measured claims and integration rehearsal.** Run the complete suite from a clean shell; measure latency, review rate, benign utility, and attack catch rate from the declared cases. Do not say “under 10%” or “AgentDojo result” unless the repository produces that number or contains that integration. A real Workflows card is valuable only if credentials are available; otherwise show the redacted payload and label the integration as mocked.
+
+**Gate 8 — presentation.** The first 30 seconds must state: “Prompt injection and data residency are the same bug.” The five-minute flow is benign allow → poisoned PDF → legal DENY → separate paraphrase REVIEW → human approval/rejection → ledger tamper failure. Keep one architecture/data-residency slide, one threat-model/limitations slide, and one comparison slide explaining that Microsoft identity and static scope are necessary but do not solve per-call provenance. Record a 90-second fallback and rehearse until the live path fits comfortably inside five minutes.
+
+**Claims discipline.** Until Gates 2–6 pass, say “prototype,” “MCP-compatible,” “in-memory demo state,” and “manifest-provided labels.” Do not claim literal MCP server compatibility, restart durability, Entra authentication, live Teams delivery, PDF runtime ingestion, or AgentDojo integration unless the corresponding proof exists. Judges forgive a scoped prototype; they punish a demo that overclaims.
+
 Sources
 MCP 2026-07-28 spec (stateless, MRTR, elicitation): https://blog.modelcontextprotocol.io/posts/2026-07-28/ · analysis: https://equixly.com/blog/2026/08/05/stateless-mcp/
 URL-mode vs form-mode approval distinction: https://github.com/LanternOps/breeze/issues/6145 · https://www.truefoundry.com/blog/mcp-tool-approval-human-gate-call-path

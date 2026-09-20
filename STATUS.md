@@ -142,6 +142,21 @@ Single process on `:8000` (see above). Exact reproduction steps are in "How to r
 - **90-second fallback recording: not done.** Same reason — no screen/audio recording capability here. `demo/fallback_capture.txt` (gate 7) is the text equivalent: a captured transcript of the full four-beat run, usable as a fallback if the live path fails on judging day, but it is not a substitute for an actual video if the room specifically expects one.
 - **Not re-verified in this checkpoint:** no code changed, so the existing 69/69 test count and eval suite pass rate are unaffected; ran `uv run pytest -q` once to confirm before writing docs.
 
+## Azure deployment (live, 2026-09-20)
+
+Gateway runs on Azure Container Apps at
+https://raja-gateway.proudsea-6cbc91b7.swedencentral.azurecontainerapps.io
+(rg `raja-demo`, env `raja-gateway-env`, ACR `caf99923d346acr`, image tag
+`v3`). Verified: `/healthz` 200, MCP `initialize` + `tools/list` over
+streamable HTTP, and `demo.local_fallback` passes all four beats against it
+(ALLOW, DENY, REVIEW+approve+resume, replay rejected). The console and the
+Azure OpenAI agent point at it via `RAJA_GATEWAY_URL`. The secrets
+(`RAJA_SERVER_KEY`, `RAJA_DEMO_SECRET`) were generated at deploy time and live
+only in the Container App; `demo.local_fallback` and the approval page need
+the same `RAJA_DEMO_SECRET` exported locally (`az containerapp secret show`).
+Redeploy steps and the reasons `az containerapp up --source` cannot be used on
+this subscription are in `DEPLOY.md`.
+
 ## How to resume (exact commands)
 
 For judging day, prefer the one-command path: `./demo/run_demo.sh` (preflight + start gateway if needed + print the exact next commands for whichever mode — live agent or local fallback — is available). `RAJA_RESET_DEMO_STATE=1 ./demo/run_demo.sh` also clears `data/ledger.jsonl`/`data/agent_pending.json` first. If Azure creds aren't set, run `uv run python -m demo.local_fallback` directly — it reproduces all four narrative beats over the real gateway HTTP surface with no LLM involved.

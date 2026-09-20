@@ -21,5 +21,6 @@ gateway: RajaGateway = build_gateway(
     config_dir=ROOT / "config",
     ledger_path=ROOT / "data" / "ledger.jsonl",
     server_key=SERVER_KEY,
+    state_db_path=ROOT / "data" / "state.db",
 )
 gateway.on_review = notify_review

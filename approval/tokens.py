@@ -16,6 +16,7 @@ import secrets
 import threading
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from gateway.canonical import canonical_json, sha256_hex
 
@@ -68,12 +69,43 @@ class Approval:
 
 
 class ApprovalStore:
-    """Server-side approval + single-use consumed-nonce store."""
+    """Server-side approval + single-use consumed-nonce store.
 
-    def __init__(self) -> None:
+    Optionally backed by a gateway.db.StateDB: every mutation is written
+    through immediately, and a lookup that misses the in-memory dict (e.g.
+    after a process restart) falls back to the durable store instead of
+    reporting "unknown approval_id" for state that genuinely exists.
+    """
+
+    def __init__(self, db: Any | None = None) -> None:
         self._lock = threading.Lock()
         self._approvals: dict[str, Approval] = {}
         self._consumed_nonces: set[str] = set()
+        self._db = db
+
+    def _hydrate_locked(self, approval_id: str) -> Approval | None:
+        approval = self._approvals.get(approval_id)
+        if approval is not None or self._db is None:
+            return approval
+        row = self._db.load_approval(approval_id)
+        if row is None:
+            return None
+        approval = Approval(
+            approval_id=row["approval_id"],
+            call_hash=row["call_hash"],
+            tool=row["tool"],
+            session_id=row["session_id"],
+            agent_id=row["agent_id"],
+            created_at=row["created_at"],
+            exp=row["exp"],
+            decision=row["decision"],
+            decided_by=row["decided_by"],
+            decided_at=row["decided_at"],
+            capability_token=row["capability_token"],
+            consumed=row["consumed"],
+        )
+        self._approvals[approval_id] = approval
+        return approval
 
     def create(self, call_hash: str, tool: str, session_id: str, agent_id: str, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> Approval:
         approval_id = secrets.token_urlsafe(16)
@@ -89,17 +121,19 @@ class ApprovalStore:
         )
         with self._lock:
             self._approvals[approval_id] = approval
+            if self._db is not None:
+                self._db.save_approval(approval)
         return approval
 
     def get(self, approval_id: str) -> Approval | None:
         with self._lock:
-            return self._approvals.get(approval_id)
+            return self._hydrate_locked(approval_id)
 
     def decide(self, approval_id: str, decision: str, actor: str, server_key: bytes) -> Approval:
         if decision not in ("approved", "rejected"):
             raise TokenError(f"invalid decision '{decision}'")
         with self._lock:
-            approval = self._approvals.get(approval_id)
+            approval = self._hydrate_locked(approval_id)
             if approval is None:
                 raise TokenError("unknown approval_id")
             if approval.decision != "pending":
@@ -123,6 +157,8 @@ class ApprovalStore:
                         }
                     ),
                 ) + f".{nonce}"
+            if self._db is not None:
+                self._db.save_approval(approval)
             return approval
 
     def consume(self, approval_id: str, call_hash: str) -> Approval:
@@ -132,7 +168,7 @@ class ApprovalStore:
         (bound bytes changed), expired, or already consumed (replay).
         """
         with self._lock:
-            approval = self._approvals.get(approval_id)
+            approval = self._hydrate_locked(approval_id)
             if approval is None:
                 raise TokenError("unknown approval_id")
             if approval.decision != "approved":
@@ -142,8 +178,14 @@ class ApprovalStore:
             if time.time() > approval.exp:
                 raise TokenError("capability token expired")
             nonce_key = f"{approval.approval_id}:{approval.capability_token}"
-            if nonce_key in self._consumed_nonces or approval.consumed:
+            already_consumed = nonce_key in self._consumed_nonces or approval.consumed
+            if not already_consumed and self._db is not None:
+                already_consumed = self._db.has_consumed_nonce(nonce_key)
+            if already_consumed:
                 raise TokenError("capability token already consumed (replay)")
             self._consumed_nonces.add(nonce_key)
             approval.consumed = True
+            if self._db is not None:
+                self._db.add_consumed_nonce(nonce_key)
+                self._db.save_approval(approval)
             return approval

@@ -11,6 +11,7 @@ from typing import Any, Callable
 from approval.tokens import ApprovalStore, TokenError, make_request_state, verify_request_state
 from gateway.backends import BACKENDS, BackendError
 from gateway.canonical import call_hash as compute_call_hash
+from gateway.db import StateDB
 from gateway.ledger import Ledger
 from gateway.labeller import ingest_result
 from gateway.manifest import ToolManifest
@@ -48,12 +49,16 @@ class RajaGateway:
         ledger: Ledger,
         server_key: bytes,
         on_review: Callable[..., None] | None = None,
+        state_db: Any | None = None,
     ) -> None:
         self.manifest = manifest
         self.policy_engine = policy_engine
         self.ledger = ledger
         self.server_key = server_key
-        self.approval_store = ApprovalStore()
+        # durable state boundary (gateway/db.py, gate 4): None means pure
+        # in-memory, as every existing build_gateway() call site/test expects
+        self.state_db = state_db
+        self.approval_store = ApprovalStore(db=state_db)
         self.sessions: dict[str, SessionState] = {}
         # optional REVIEW notification hook (e.g. approval.teams.notify_review),
         # wired in by gateway/instance.py; never allowed to block or fail a call
@@ -61,7 +66,8 @@ class RajaGateway:
 
     def _session(self, session_id: str) -> SessionState:
         if session_id not in self.sessions:
-            self.sessions[session_id] = SessionState()
+            taint_store = TaintStore(db=self.state_db, session_id=session_id)
+            self.sessions[session_id] = SessionState(taint_store=taint_store)
         return self.sessions[session_id]
 
     def _payload_args(self, args: dict[str, Any]) -> dict[str, Any]:
@@ -275,8 +281,20 @@ class RajaGateway:
         return {"result": result}
 
 
-def build_gateway(config_dir: pathlib.Path, ledger_path: pathlib.Path, server_key: bytes) -> RajaGateway:
+def build_gateway(
+    config_dir: pathlib.Path,
+    ledger_path: pathlib.Path,
+    server_key: bytes,
+    state_db_path: pathlib.Path | None = None,
+) -> RajaGateway:
     manifest = ToolManifest.from_yaml(config_dir / "tools.yaml")
     policy_engine = PolicyEngine.from_yaml(config_dir / "policy.yaml")
     ledger = Ledger(ledger_path)
-    return RajaGateway(manifest=manifest, policy_engine=policy_engine, ledger=ledger, server_key=server_key)
+    state_db = StateDB(state_db_path) if state_db_path is not None else None
+    return RajaGateway(
+        manifest=manifest,
+        policy_engine=policy_engine,
+        ledger=ledger,
+        server_key=server_key,
+        state_db=state_db,
+    )

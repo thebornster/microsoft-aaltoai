@@ -6,16 +6,16 @@
 #
 # Usage: ./demo/run_demo.sh
 # Optional: RAJA_RESET_DEMO_STATE=1 ./demo/run_demo.sh
-#   wipes ONLY data/ledger.jsonl and data/agent_pending.json (never .env,
-#   never config/) before starting, for a clean run.
+#   wipes ONLY data/ledger.jsonl, data/agent_pending.json, and data/state.db*
+#   (never .env, never config/) before starting, for a clean run.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
 GATEWAY_URL="${RAJA_GATEWAY_URL:-http://127.0.0.1:8000}"
 
 if [ "${RAJA_RESET_DEMO_STATE:-0}" = "1" ]; then
-  echo "Resetting demo state (data/ledger.jsonl, data/agent_pending.json only)..."
-  rm -f data/ledger.jsonl data/agent_pending.json
+  echo "Resetting demo state (data/ledger.jsonl, data/agent_pending.json, data/state.db* only)..."
+  rm -f data/ledger.jsonl data/agent_pending.json data/state.db data/state.db-wal data/state.db-shm
 fi
 
 echo "== Preflight =="

@@ -82,11 +82,29 @@ class MatchResult:
 
 
 class TaintStore:
-    """Per-session fingerprint index. One instance per session_id."""
+    """Per-session fingerprint index. One instance per session_id.
 
-    def __init__(self) -> None:
+    Optionally backed by a gateway.db.StateDB for restart durability: when
+    `db`/`session_id` are given, sources ingested this process are written
+    through immediately, and any sources from a prior process are loaded
+    back in on construction (see gateway.gateway.RajaGateway._session).
+    """
+
+    def __init__(self, db: Any | None = None, session_id: str | None = None) -> None:
         self.sources: dict[str, SourceEntry] = {}
         self.untrusted_ingested: bool = False
+        self._db = db
+        self._session_id = session_id
+        if db is not None and session_id is not None:
+            for row in db.load_sources(session_id):
+                self.sources[row["source_id"]] = SourceEntry(
+                    source_id=row["source_id"],
+                    trust=row["trust"],
+                    residency=row["residency"],
+                    shingle_index={tuple(s) for s in row["shingle_index"]},
+                    entities=set(row["entities"]),
+                )
+            self.untrusted_ingested = db.is_untrusted(session_id)
 
     def ingest(
         self,
@@ -106,6 +124,17 @@ class TaintStore:
         self.sources[source_id] = entry
         if trust == "untrusted":
             self.untrusted_ingested = True
+        if self._db is not None and self._session_id is not None:
+            self._db.save_source(
+                session_id=self._session_id,
+                source_id=source_id,
+                trust=trust,
+                residency=residency,
+                shingle_index=[list(t) for t in entry.shingle_index],
+                entities=list(entry.entities),
+            )
+            if trust == "untrusted":
+                self._db.set_untrusted(self._session_id)
 
     def resolve(self, value: Any) -> list[MatchResult]:
         text = flatten_to_text(value)

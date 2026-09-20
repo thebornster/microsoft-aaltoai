@@ -41,14 +41,41 @@ def _require_env(name: str) -> str:
     return value
 
 
-def _azure_client():
+def _parse_azure_endpoint(raw: str) -> tuple[str, str | None, str | None]:
+    """Accepts either a bare resource endpoint or the full "Target URI" the
+    Azure portal shows (https://<resource>.openai.azure.com/openai/deployments/
+    <deployment>/chat/completions?api-version=...) and returns
+    (base_endpoint, deployment, api_version) with the latter two possibly None.
+    """
+    from urllib.parse import parse_qs, urlparse
+
+    parsed = urlparse(raw)
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    deployment = None
+    if "/deployments/" in parsed.path:
+        deployment = parsed.path.split("/deployments/", 1)[1].split("/", 1)[0]
+    api_version = parse_qs(parsed.query).get("api-version", [None])[0]
+    return base, deployment, api_version
+
+
+def _azure_client() -> tuple["AzureOpenAI", str]:  # noqa: F821
     from openai import AzureOpenAI
 
-    return AzureOpenAI(
-        azure_endpoint=_require_env("AZURE_OPENAI_ENDPOINT"),
+    raw_endpoint = _require_env("AZURE_OPENAI_ENDPOINT")
+    base, parsed_deployment, parsed_api_version = _parse_azure_endpoint(raw_endpoint)
+
+    deployment = os.environ.get("AZURE_OPENAI_DEPLOYMENT") or parsed_deployment
+    if not deployment:
+        print("Could not determine deployment name: set AZURE_OPENAI_DEPLOYMENT.", file=sys.stderr)
+        sys.exit(1)
+    api_version = os.environ.get("AZURE_OPENAI_API_VERSION") or parsed_api_version or "2026-01-01-preview"
+
+    client = AzureOpenAI(
+        azure_endpoint=base,
         api_key=_require_env("AZURE_OPENAI_API_KEY"),
-        api_version=os.environ.get("AZURE_OPENAI_API_VERSION", "2026-01-01-preview"),
+        api_version=api_version,
     )
+    return client, deployment
 
 
 class GatewayClient:
@@ -107,8 +134,7 @@ def main() -> None:
     prompt = " ".join(sys.argv[1:]) or "Summarise the vibration faults on line 3 and check the supplier bulletin."
     manifest = ToolManifest.from_yaml("config/tools.yaml")
     gw = GatewayClient(os.environ.get("RAJA_GATEWAY_URL", "http://127.0.0.1:8000"))
-    client = _azure_client()
-    deployment = _require_env("AZURE_OPENAI_DEPLOYMENT")
+    client, deployment = _azure_client()
 
     session_id = f"s_{uuid.uuid4().hex[:8]}"
     agent_id = "agent-maint-copilot"

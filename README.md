@@ -17,6 +17,15 @@ mode, approval links include the explicit `RAJA_DEMO_SECRET` (default
 machine. See [DEMO.md](DEMO.md), [ARCHITECTURE.md](ARCHITECTURE.md), and
 [THREAT_MODEL.md](THREAT_MODEL.md).
 
+## Deploy it
+
+The repository includes a production-secret-aware `Dockerfile` and an Azure
+Container Apps quickstart in [DEPLOY.md](DEPLOY.md). The recommended hackathon
+deployment is one gateway replica in Sweden Central with HTTPS ingress and
+explicit `RAJA_SERVER_KEY`, `RAJA_DEMO_SECRET`, and `RAJA_PUBLIC_BASE_URL`
+settings. The current SQLite state layer is intentionally single-replica; the
+deployment guide calls out the persistent-storage and scaling boundary.
+
 ## Why this fits the challenge
 
 Raja uses the manufacturing scenario from the challenge brief: a factory-floor

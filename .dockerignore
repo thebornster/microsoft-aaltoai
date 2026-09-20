@@ -1,0 +1,14 @@
+.git
+.github
+.venv
+__pycache__
+.pytest_cache
+data
+.env
+Challenge-slides.pdf
+tests
+console
+eval
+README.md
+DEMO.md
+STATUS.md

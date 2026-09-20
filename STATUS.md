@@ -14,9 +14,9 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 2. ~~**P0 — Use the PDF as the runtime source.**~~ **Done previous checkpoint** — see below.
 3. ~~**P1 — Close the protocol honesty gap.**~~ **Done previous checkpoint** — see "Gate 3" section below.
 4. ~~**P1 — Make state and identity claims precise.**~~ **Done previous checkpoint** — see "Gate 4" section below.
-5. ~~**P1 — Remove unsafe-looking defaults from the normal path.**~~ **Done this checkpoint** — see "Gate 5" section below.
-6. **P1 — Strengthen judge evidence.** **← NEXT.** Add structured decision metadata to the response (`decision`, `rules_fired`, `regulations`, `sources`, `matched_entities`, `shingle_overlap`) instead of requiring consumers to parse human-readable error text. Add console tests for lineage and residency DOT generation, and a tamper test that demonstrates the exact broken sequence.
-7. **P2 — Validate integrations and rehearse.** If a real Power Automate Workflows URL is available, test the Adaptive Card end to end; otherwise demonstrate the redacted payload locally and say “not live-connected.” Run the full demo from a clean shell, time it, record a fallback capture, and test the second-use rejection of a consumed requestState.
+5. ~~**P1 — Remove unsafe-looking defaults from the normal path.**~~ **Done previous checkpoint** — see "Gate 5" section below.
+6. ~~**P1 — Strengthen judge evidence.**~~ **Done this checkpoint** — see "Gate 6" section below.
+7. **P2 — Validate integrations and rehearse.** **← NEXT.** If a real Power Automate Workflows URL is available, test the Adaptive Card end to end; otherwise demonstrate the redacted payload locally and say “not live-connected.” Run the full demo from a clean shell, time it, record a fallback capture, and test the second-use rejection of a consumed requestState.
 8. **P2 — Package the proof.** Add a concise judge-facing `DEMO.md` (commands, expected outputs, claims that are and are not made), a threat-model slide, an architecture/data-residency slide, and a 90-second fallback recording. Present Raja as complementary to Microsoft governance: static identity/scope is necessary; per-call provenance and destination policy close the confused-deputy gap.
 
 **Definition of win-ready:** the judge can run one command, see the real PDF trigger a real agent decision, observe a hard legal DENY, observe an out-of-band REVIEW and exact-call retry, inspect a structured lineage record, tamper with the ledger, and reproduce the failure—without Azure/Teams credentials being the only path to evidence. Every claim in the pitch must be demonstrable or explicitly labeled as a prototype/next step.
@@ -64,10 +64,16 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 - **New test `tests/test_env_config.py`** (7 cases): unit-level coverage of `require_secret`/`is_demo_mode` (env value wins, fails closed without demo mode, demo default only under `RAJA_DEMO_MODE=1`, exact-value match for the flag), plus three subprocess-level tests that actually `import gateway.instance` in a clean child process with a controlled environment — confirming it exits non-zero with `RAJA_SERVER_KEY` in the error when neither `RAJA_SERVER_KEY` nor `RAJA_DEMO_MODE=1` is set, and exits zero when either is provided. Subprocess (not in-process reload) was necessary because `SERVER_KEY`/`DEMO_SECRET` are computed once at module import as top-level constants. Unauthorized-approval behavior (wrong/missing secret rejected with 403) was already covered by the pre-existing `tests/test_approval_app.py::test_wrong_secret_is_forbidden`, unchanged by this checkpoint.
 - **Not done, out of scope for gate 5 as worded:** real "approval authentication" beyond a shared secret (e.g. Entra sign-in) — the design doc and `approval/app.py`'s own docstring already name this as the production replacement; gate 5's ask was to stop the *current* shared-secret scheme from having a silent insecure default, not to build real SSO.
 
+**Gate 6 done (this checkpoint):** structured decision metadata, plus real test coverage for the console's DOT builders and a tamper test that runs through the real ledger/CLI, not just hand-built dicts.
+- `gateway/gateway.py` gained a `_meta(decision, fired_rules, sources, matches)` helper and every branch of `RajaGateway.call()`/`_handle_retry()` now returns a `meta` key alongside the existing `result`/`isError`/`resultType` fields — purely additive, no existing key removed or renamed. `meta` always has: `decision` (`ALLOW`/`DENY`/`REVIEW`/`ERROR`), `rules_fired` (rule ids), `regulations` (deduped citation strings, e.g. `"GDPR Art. 44 - general principle for transfers"`), `sources` (matched/ingested source ids), `matched_entities` (deduped identifiers like `EMP-4471` across all matches), and `shingle_overlap` (max overlap across matches, `0` if none). A judge or any consumer (console, demo scripts, a future dashboard) can now read `meta["regulations"]` directly instead of substring-parsing the `error` string — the human-readable `error`/`fired_desc` strings are unchanged and still present for backward compatibility with `demo/local_fallback.py`, `eval/run_suite.py`'s substring assertions, etc.
+- New test `tests/test_decision_meta.py` (4 cases) asserts the exact `meta` shape for an ALLOW read, a hard DENY (checks `gdpr-art44-transfer` and the entity `EMP-4471` show up structurally), a REVIEW, and the missing-identity ERROR path.
+- **`console/app.py` refactored (behavior-preserving) so its pure DOT-builder functions (`_origin_index`, `_lineage_dot`, `_residency_dot`) are importable and testable without a Streamlit `ScriptRunContext`.** All UI/rendering code (previously executing unconditionally at module scope, including `st.set_page_config`) is now inside a `_run_app()` function called only under `if __name__ == "__main__":` — this is exactly how `streamlit run console/app.py` already invokes it (Streamlit sets `__name__ == "__main__"` for the target script), so the live console is unchanged; verified with a fresh headless `streamlit run` smoke test (HTTP 200). `import console.app` from a test now just defines functions/constants, no rendering side effects. New test `tests/test_console_dot.py` (6 cases): source→sink edges with rule notes, self-referential/missing-origin sources correctly skipped, the no-sources "origin call" label, the no-egress-yet placeholder, and multi-region grouping colored by the worst decision per region.
+- New test `tests/test_verify_ledger.py` (2 cases) drives `verify_ledger.main()` end-to-end against a ledger produced by three real `RajaGateway.call()`s (not hand-built dicts): confirms a clean 3-record chain reports `OK`, and confirms tampering the third record's `decision` field makes `main()` print `TAMPERED at seq=2` with `hash mismatch` and return exit code `1` — the exact broken-sequence evidence a judge would need, reproducible in CI, not just "run it by hand and look." The pre-existing `tests/test_ledger.py::test_tampering_is_detected` (raw dict tampering) is unchanged and still covers `verify_chain()` itself.
+
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback
 
-Tests: 57 passing, `uv run pytest -q`. No known failing or flaky tests.
+Tests: 69 passing, `uv run pytest -q`. No known failing or flaky tests.
 
 ## Key decisions made (not obvious from re-reading the code)
 
@@ -119,7 +125,7 @@ For development/manual control:
 
 ```bash
 cd /Users/borna/hackathon-microsoft
-uv run pytest -q                                    # 57 tests, should be green
+uv run pytest -q                                    # 69 tests, should be green
 uv run python -m eval.run_suite                     # eval suite pass/fail table (12/12 should pass)
 
 # ONE process serves both /mcp/call and /approve/* — do not also start approval.app:app separately

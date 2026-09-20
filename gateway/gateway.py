@@ -41,6 +41,29 @@ def _now_iso() -> str:
     return datetime.datetime.now(datetime.timezone.utc).isoformat()
 
 
+def _meta(
+    decision: str,
+    fired_rules: list | None = None,
+    sources: list[str] | None = None,
+    matches: list | None = None,
+) -> dict[str, Any]:
+    """Structured decision metadata, additive alongside the existing
+    human-readable result/error fields — a judge/consumer can read
+    `meta["decision"]`/`meta["regulations"]` etc. directly instead of
+    parsing the `error` string for rule ids and regulation citations.
+    """
+    fired_rules = fired_rules or []
+    matches = matches or []
+    return {
+        "decision": decision,
+        "rules_fired": [r.id for r in fired_rules],
+        "regulations": sorted({r.regulation for r in fired_rules}),
+        "sources": sources or [],
+        "matched_entities": sorted({e for m in matches for e in m.matched_entities}),
+        "shingle_overlap": max((m.shingle_overlap for m in matches), default=0),
+    }
+
+
 class RajaGateway:
     def __init__(
         self,
@@ -90,11 +113,11 @@ class RajaGateway:
         request_state: str | None = None,
     ) -> dict[str, Any]:
         if not session_id or not agent_id:
-            return {"isError": True, "error": "session_id and agent_id are required"}
+            return {"isError": True, "error": "session_id and agent_id are required", "meta": _meta("ERROR")}
         try:
             tool_def = self.manifest.get(tool)
         except Exception as e:
-            return {"isError": True, "error": str(e)}
+            return {"isError": True, "error": str(e), "meta": _meta("ERROR")}
 
         if request_state is not None:
             return self._handle_retry(tool_def_name=tool, args=args, session_id=session_id, agent_id=agent_id, request_state=request_state)
@@ -132,7 +155,7 @@ class RajaGateway:
             destination_region=None,
             human=None,
         )
-        return {"result": result}
+        return {"result": result, "meta": _meta("ALLOW", sources=[source_id])}
 
     def _call_egress(self, tool_def, args, session, session_id, agent_id) -> dict[str, Any]:
         payload = self._payload_args(args)
@@ -159,7 +182,10 @@ class RajaGateway:
                 destination_region=tool_def.destination_region,
                 human=None,
             )
-            return {"result": result}
+            return {
+                "result": result,
+                "meta": _meta("ALLOW", fired_rules=decision.fired_rules, sources=arg_labels.sources, matches=arg_labels.matches),
+            }
 
         if decision.decision == "deny":
             self._log(
@@ -173,7 +199,11 @@ class RajaGateway:
                 human=None,
             )
             fired = ", ".join(f"{r.id} ({r.regulation})" for r in decision.fired_rules)
-            return {"isError": True, "error": f"denied: {fired}"}
+            return {
+                "isError": True,
+                "error": f"denied: {fired}",
+                "meta": _meta("DENY", fired_rules=decision.fired_rules, sources=arg_labels.sources, matches=arg_labels.matches),
+            }
 
         # review
         ch = compute_call_hash(tool=tool_def.name, args=args, session_id=session_id, agent_id=agent_id)
@@ -215,23 +245,28 @@ class RajaGateway:
                 }
             },
             "requestState": req_state,
+            "meta": _meta("REVIEW", fired_rules=decision.fired_rules, sources=arg_labels.sources, matches=arg_labels.matches),
         }
 
     def _handle_retry(self, tool_def_name: str, args: dict[str, Any], session_id: str, agent_id: str, request_state: str) -> dict[str, Any]:
         try:
             state = verify_request_state(self.server_key, request_state)
         except TokenError as e:
-            return {"isError": True, "error": f"invalid requestState: {e}"}
+            return {"isError": True, "error": f"invalid requestState: {e}", "meta": _meta("ERROR")}
 
         approval_id = str(state["approval_id"])
         bound_call_hash = str(state["call_hash"])
         retried_hash = compute_call_hash(tool=tool_def_name, args=args, session_id=session_id, agent_id=agent_id)
         if retried_hash != bound_call_hash:
-            return {"isError": True, "error": "retried call does not match the reviewed call (args changed)"}
+            return {
+                "isError": True,
+                "error": "retried call does not match the reviewed call (args changed)",
+                "meta": _meta("ERROR"),
+            }
 
         approval = self.approval_store.get(approval_id)
         if approval is None:
-            return {"isError": True, "error": "unknown approval"}
+            return {"isError": True, "error": "unknown approval", "meta": _meta("ERROR")}
 
         if approval.decision == "pending":
             return {
@@ -247,6 +282,7 @@ class RajaGateway:
                     }
                 },
                 "requestState": request_state,
+                "meta": _meta("REVIEW"),
             }
 
         if approval.decision == "rejected":
@@ -260,12 +296,12 @@ class RajaGateway:
                 destination_region=None,
                 human={"decision": "REJECT", "by": approval.decided_by, "at": approval.decided_at},
             )
-            return {"isError": True, "error": f"rejected by {approval.decided_by}"}
+            return {"isError": True, "error": f"rejected by {approval.decided_by}", "meta": _meta("DENY")}
 
         try:
             self.approval_store.consume(approval_id=approval_id, call_hash=retried_hash)
         except TokenError as e:
-            return {"isError": True, "error": str(e)}
+            return {"isError": True, "error": str(e), "meta": _meta("ERROR")}
 
         result = self._execute_backend(tool_def_name, args)
         self._log(
@@ -278,7 +314,7 @@ class RajaGateway:
             destination_region=self.manifest.get(tool_def_name).destination_region,
             human={"decision": "APPROVE", "by": approval.decided_by, "at": approval.decided_at},
         )
-        return {"result": result}
+        return {"result": result, "meta": _meta("ALLOW")}
 
 
 def build_gateway(

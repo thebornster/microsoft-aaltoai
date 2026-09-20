@@ -18,7 +18,7 @@ rules:
     then: deny
 
   - id: aiact-art14-cross-source
-    regulation: "EU AI Act Art. 14 - human oversight (applies Dec 2027, designing ahead)"
+    regulation: "EU AI Act Art. 14 - human oversight (high-risk duties phase in 2026-2027, designing ahead)"
     description: Untrusted content steering a call that carries personal data
     when:
       arg_labels.trust: untrusted

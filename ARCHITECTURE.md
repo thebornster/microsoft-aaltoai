@@ -52,6 +52,11 @@ No AI in the decision loop. Labelling, fingerprinting, taint resolution,
 and policy evaluation are all deterministic — exact token shingling and
 index intersection, not a classifier.
 
+"Local edge" is where the gateway is designed to run on site. The hosted
+judge demo runs the same container on Azure Container Apps in Sweden
+Central, and every ledger record says which one it was
+(`processing_path`, set from `RAJA_GATEWAY_LOCATION`).
+
 ## Two transports exist side by side, honestly labeled
 
 | | Wire format | Used by |

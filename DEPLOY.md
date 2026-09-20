@@ -113,6 +113,11 @@ the calls, open the real approval URL when the REVIEW scenario pauses, click
 Approve, then return and click Continue. Open `/dashboard` afterward to show
 the resulting evidence.
 
+The deployment also sets `RAJA_GATEWAY_LOCATION=azure-container-apps:swedencentral`
+so the `processing_path` written into every ledger record names where the
+gateway actually ran instead of the on-site default `local-edge`, and
+`RAJA_APPROVAL_TTL_SECONDS=1800` so a REVIEW approval survives a full demo.
+
 The overview's runtime proof card and `/deployment/data` endpoint are generated
 from the running container. They show the live Azure Container Apps hostname,
 region, revision tag, MCP endpoint, tool count, and ledger status. The

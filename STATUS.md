@@ -83,7 +83,7 @@ Original hardening program (all closed):
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback
 
-Tests: 69 passing, `uv run pytest -q`. No known failing or flaky tests.
+Tests: 72 passing, `uv run pytest -q`. No known failing or flaky tests.
 
 ## Key decisions made (not obvious from re-reading the code)
 

@@ -30,7 +30,10 @@ The deployed gateway includes a judge-facing product surface at `/`: a
 responsive overview page and a live `/dashboard` control room. The dashboard
 reads only sanitized decision metadata from the gateway's hash-chained ledger,
 showing ALLOW/REVIEW/DENY outcomes, blocked-versus-invoked paths, and live
-ledger verification without requiring a separate frontend deployment.
+ledger verification without requiring a separate frontend deployment. Clicking
+a row opens that record's lineage: the source ids it derived from, its trust
+and residency labels, every rule that fired with its regulation, the human
+decision if any, the processing path, and the record's chain hashes.
 
 The deployed site also includes an in-browser agent playground at `/agent`.
 Judges can click a safe task, a poisoned-bulletin attack, or a human-approval
@@ -55,8 +58,10 @@ Raja uses the manufacturing scenario from the challenge brief: a factory-floor
 copilot reads on-site maintenance records and supplier documents, then may act
 on a supplier portal. It demonstrates:
 
-- **Sovereignty:** explicit local-edge processing, EU/non-EU destination policy,
-  residency map, and a tamper-evident audit ledger.
+- **Sovereignty:** an explicit processing path in every ledger record (local
+  edge when run on site, Azure Sweden Central in the hosted demo), EU/non-EU
+  destination policy, a per-record lineage panel, and a tamper-evident audit
+  ledger.
 - **Privacy/security technique:** deterministic exact-shingle and
   entity-identifier provenance tracking, with no AI in the enforcement loop.
 - **Responsible AI:** URL-mode out-of-band human approval for ambiguous

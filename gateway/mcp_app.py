@@ -85,20 +85,31 @@ def _dashboard_payload() -> dict:
     counts = {decision: sum(1 for record in records if record.get("decision") == decision)
               for decision in ("ALLOW", "REVIEW", "DENY")}
     ok, bad_seq, reason = verify_chain(records)
+    citations = {rule.id: rule.regulation for rule in gateway.policy_engine.rules}
+    eu_regions = set(gateway.policy_engine.eu_regions)
     recent = []
     for record in records[-40:]:
         labels = record.get("arg_labels") or {}
+        region = record.get("destination_region")
         recent.append({
             "seq": record.get("seq"),
+            "ts": record.get("ts"),
             "tool": record.get("tool"),
             "decision": record.get("decision"),
-            "destination": record.get("destination_region") or "local / internal",
+            "destination": region or "local / internal",
+            "destination_eu": None if region is None else region in eu_regions,
             "trust": labels.get("trust"),
             "residency": labels.get("residency"),
             "sources": labels.get("sources") or [],
-            "rules": record.get("rules_fired") or [],
+            "rules": [{"id": rule_id, "regulation": citations.get(rule_id, "")}
+                      for rule_id in record.get("rules_fired") or []],
+            "human": record.get("human"),
             "backend_invoked": bool(record.get("backend_invoked", False)),
-            "timestamp": record.get("timestamp") or record.get("created_at"),
+            "processing_path": record.get("processing_path") or [],
+            "session": record.get("session"),
+            "agent_id": record.get("agent_id"),
+            "hash": (record.get("hash") or "")[:16],
+            "prev_hash": (record.get("prev_hash") or "")[:16],
         })
     return {
         "status": "operational",
@@ -134,21 +145,30 @@ table{width:100%;border-collapse:collapse}th{text-align:left;color:var(--muted);
 .proof{display:flex;align-items:center;gap:13px;border:1px solid #c9d9ea;background:var(--blue-tint);border-radius:8px;padding:14px;margin-bottom:20px}.proof strong{color:var(--blue);display:block;margin-bottom:4px}.proof span{color:var(--muted);font-size:12px}.ring{width:34px;height:34px;border-radius:50%;border:3px solid var(--blue);border-top-color:transparent;flex:none}
 .bar{margin:17px 0}.barline{height:8px;background:var(--line);border-radius:5px;display:flex;overflow:hidden;margin-top:8px}.barline i{display:block}.barline .a{background:var(--green)}.barline .r{background:var(--orange)}.barline .d{background:var(--red)}.legend{display:flex;justify-content:space-between;color:var(--muted);font-size:11px}
 .empty{color:var(--muted);padding:25px 7px;text-align:center}.foot{color:var(--muted);font:10px monospace;margin-top:30px}
+.hint{font-size:12px;margin:-8px 0 14px}.row{cursor:pointer}.row:hover td{background:var(--bg)}.lineage td{background:var(--bg);border-top:0;padding:6px 7px 16px}.trace{display:grid;gap:8px;font-size:12px;line-height:1.6}.trace>div{display:grid;grid-template-columns:120px 1fr;gap:10px;align-items:start}.trace b{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;padding-top:3px}.trace ul{margin:0;padding-left:18px}.trace code{color:var(--purple);font-size:11px}
+@media(max-width:800px){.trace>div{grid-template-columns:1fr}}
 @media(max-width:800px){.metrics{grid-template-columns:repeat(2,1fr)}.body{grid-template-columns:1fr}.heading{display:block}.heading .live{display:block;margin-top:18px}table{font-size:11px}.hide{display:none}}
 </style></head><body><div class="shell">
 <header class="top"><div class="brand"><i>R</i>RAJA <small>/ LIVE CONTROL ROOM</small></div><div class="nav"><a href="/">Overview</a><a href="/agent">Agent</a><a href="/mcp/tools">Tools</a></div></header>
 <section class="heading"><div><h1>Decision intelligence</h1><p>Every governed action, its provenance, and its policy outcome.</p></div><div class="live">LIVE · AUTO-REFRESH 5S</div></section>
 <section class="metrics"><div class="metric"><label>Total decisions</label><strong id="total">—</strong><em>append-only ledger</em></div><div class="metric"><label>Allowed</label><strong id="allow">—</strong><em>backend invoked</em></div><div class="metric"><label>Human review</label><strong id="review">—</strong><em>out-of-band approval</em></div><div class="metric"><label>Hard denied</label><strong id="deny">—</strong><em>blocked before egress</em></div></section>
-<section class="body"><div class="panel"><div class="panel-head"><h2>Recent policy decisions</h2><span class="refresh" onclick="load()">↻ REFRESH</span></div><table><thead><tr><th>Seq</th><th>Tool</th><th>Outcome</th><th>Destination</th><th>Path</th></tr></thead><tbody id="feed"><tr><td colspan="5" class="empty">Loading decision feed…</td></tr></tbody></table></div>
+<section class="body"><div class="panel"><div class="panel-head"><h2>Recent policy decisions</h2><span class="refresh" onclick="load()">↻ REFRESH</span></div><p class="muted hint">Click a row to open its lineage: sources → labels → rules → decision.</p><table><thead><tr><th>Seq</th><th>Tool</th><th>Outcome</th><th>Destination</th><th>Path</th></tr></thead><tbody id="feed"><tr><td colspan="5" class="empty">Loading decision feed…</td></tr></tbody></table></div>
 <aside class="panel"><h2>Integrity & deployment proof</h2><div class="proof"><div class="ring"></div><div><strong id="chain">Verifying chain…</strong><span id="chain-copy">Checking cryptographic continuity</span></div></div><div class="bar"><div class="legend"><span>Decision mix</span><span id="mix">—</span></div><div class="barline"><i class="a" id="bar-a"></i><i class="r" id="bar-r"></i><i class="d" id="bar-d"></i></div></div><div class="bar"><div class="legend"><span>Governed surfaces</span><span id="tools">—</span></div></div><div id="azure-proof" class="proof" style="margin-top:22px"><div><strong>Verifying runtime…</strong><span>Reading deployment metadata from the gateway</span></div></div><p class="muted" style="line-height:1.55;font-size:12px">Raja makes no probabilistic policy decisions. It labels data at ingress, resolves exact provenance, evaluates every rule, and records the result before a sink can run.</p></aside></section>
 <div class="foot">RAJA / SHA-256 HASH-CHAINED EVIDENCE / NO LLM IN THE DECISION LOOP</div></div>
 <script>
 const esc=s=>String(s??"—").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+function toggle(seq){const feed=document.querySelector("#feed");const row=document.querySelector("#lineage-"+seq);if(!row)return;const opening=row.hidden;feed.querySelectorAll(".lineage").forEach(el=>el.hidden=true);row.hidden=!opening;feed.dataset.open=opening?String(seq):""}
+function lineage(r){const sources=r.sources.length?r.sources.map(s=>`<code>${esc(s)}</code>`).join(", "):"<i>none — no labelled source flowed into this call</i>";
+const rules=r.rules.length?r.rules.map(x=>`<li><code>${esc(x.id)}</code> — ${esc(x.regulation)}</li>`).join(""):"<li><i>no rule fired</i></li>";
+const h=r.human;const human=!h?"<i>no human step</i>":h.decision==="PENDING"?`awaiting approval <code>${esc(h.approval_id)}</code>`:`${esc(h.decision)} by ${esc(h.by)}${h.at?" at "+esc(new Date(h.at*1000).toISOString().slice(0,19).replace("T"," "))+" UTC":""}`;
+const dest=r.destination_eu===null?"stays local / internal":`${esc(r.destination)} (${r.destination_eu?"EU":"non-EU"})`;
+return `<div class="trace"><div><b>1 · Sources</b><span>${sources}</span></div><div><b>2 · Labels</b><span>trust=<code>${esc(r.trust||"n/a")}</code> residency=<code>${esc(r.residency||"n/a")}</code></span></div><div><b>3 · Rules fired</b><ul>${rules}</ul></div><div><b>4 · Decision</b><span><span class="decision ${esc(r.decision)}">${esc(r.decision)}</span> · destination ${dest} · backend ${r.backend_invoked?"invoked":"<b>not invoked</b>"}</span></div><div><b>Human</b><span>${human}</span></div><div><b>Processing path</b><span>${r.processing_path.map(esc).join(" → ")||"—"}</span></div><div><b>Record</b><span>seq #${esc(r.seq)} · ${esc(r.ts)} · session <code>${esc(r.session)}</code> · agent <code>${esc(r.agent_id)}</code> · hash <code>${esc(r.hash)}…</code> · prev <code>${esc(r.prev_hash)}…</code></span></div></div>`}
 async function load(){try{const d=await fetch("/dashboard/data",{cache:"no-store"}).then(r=>r.json());const c=d.counts||{};const total=d.records||0;
 document.querySelector("#total").textContent=total;document.querySelector("#allow").textContent=c.ALLOW||0;document.querySelector("#review").textContent=c.REVIEW||0;document.querySelector("#deny").textContent=c.DENY||0;document.querySelector("#tools").textContent=d.tools+" tools";
 document.querySelector("#mix").textContent=total+" total";for(const [id,key] of [["a","ALLOW"],["r","REVIEW"],["d","DENY"]])document.querySelector("#bar-"+id).style.width=(total?(c[key]||0)/total*100:0)+"%";
 const chain=document.querySelector("#chain");chain.textContent=d.ledger.verified?"Ledger verified":"Ledger integrity warning";chain.style.color=d.ledger.verified?"var(--blue)":"var(--red)";document.querySelector("#chain-copy").textContent=d.ledger.message;
-document.querySelector("#feed").innerHTML=d.recent.length?d.recent.map(r=>`<tr><td>#${esc(r.seq)}</td><td><b>${esc(r.tool)}</b><br><span class="muted">${esc(r.trust||"unknown")} · ${esc(r.residency||"unlabelled")}</span></td><td><span class="decision ${esc(r.decision)}">${esc(r.decision)}</span></td><td>${esc(r.destination)}</td><td>${r.backend_invoked?"<span style='color:var(--green)'>invoked</span>":"<span style='color:var(--orange)'>held / blocked</span>"}</td></tr>`).join(""):'<tr><td colspan="5" class="empty">No decisions yet. Run the demo agent to populate the control room.</td></tr>';
+const feed=document.querySelector("#feed");if(!d.recent.length){feed.innerHTML='<tr><td colspan="5" class="empty">No decisions yet. <a href="/agent">Run the agent playground</a> to populate the control room.</td></tr>';return}
+const open=feed.dataset.open;feed.innerHTML=d.recent.map(r=>`<tr class="row" data-seq="${esc(r.seq)}" onclick="toggle(${Number(r.seq)})"><td>#${esc(r.seq)}</td><td><b>${esc(r.tool)}</b><br><span class="muted">${esc(r.trust||"unknown")} · ${esc(r.residency||"unlabelled")}</span></td><td><span class="decision ${esc(r.decision)}">${esc(r.decision)}</span></td><td>${esc(r.destination)}${r.destination_eu===false?' <span class="muted">(non-EU)</span>':r.destination_eu===true?' <span class="muted">(EU)</span>':''}</td><td>${r.backend_invoked?"<span style='color:var(--green)'>invoked</span>":"<span style='color:var(--orange)'>held / blocked</span>"}</td></tr><tr class="lineage" id="lineage-${esc(r.seq)}" ${String(r.seq)===open?"":"hidden"}><td colspan="5">${lineage(r)}</td></tr>`).join("");
 }catch(e){document.querySelector("#chain").textContent="Dashboard unavailable";document.querySelector("#chain-copy").textContent="Retrying connection…"}}async function deployment(){try{const d=await fetch("/deployment/data",{cache:"no-store"}).then(r=>r.json());document.querySelector("#azure-proof").innerHTML=`<div><strong>${esc(d.platform)} · ${esc(d.region)}</strong><span>${esc(d.hostname)} · ${esc(d.revision)} · ${esc(d.tool_count)} tools · ${esc(d.mcp_endpoint)}</span></div>`}catch(e){document.querySelector("#azure-proof").innerHTML="<div><strong>Runtime metadata unavailable</strong></div>"}}load();deployment();setInterval(load,5000);setInterval(deployment,15000);
 </script></body></html>""")
 

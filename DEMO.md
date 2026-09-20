@@ -11,7 +11,26 @@ Full narrative and rationale: `raja-design-doc.md`. Current build status and
 exactly what's proven vs. not: `STATUS.md`. This file is the short version:
 what to run, what you'll see, and what we do and don't claim.
 
-## Run it
+## Run it (hosted, what the judges see)
+
+The gateway is deployed on Azure Container Apps in Sweden Central:
+https://raja-gateway.proudsea-6cbc91b7.swedencentral.azurecontainerapps.io
+
+- `/` overview and live runtime proof (host, region, revision, tool count)
+- `/agent` browser playground: three cards run the benign, hard-DENY, and
+  REVIEW-then-approve beats against the real gateway; the REVIEW card opens
+  the real approval page in a new tab and resumes with the bound
+  `requestState` after the human clicks Approve
+- `/dashboard` live control room: counts, decision feed, ledger verification,
+  and a per-record lineage panel (click a row: sources, labels, rules with
+  their regulation, human decision, processing path, chain hashes)
+- `/mcp` the literal MCP endpoint; `/mcp/tools` the manifest
+
+The hosted container has no persistent volume, so the ledger starts empty
+after a restart. Either click through `/agent`, or populate all four beats
+from a shell with `RAJA_DEMO_SECRET=... ./demo/run_deployed_demo.sh`.
+
+## Run it (local)
 
 ```bash
 cd hackathon-microsoft
@@ -151,10 +170,14 @@ sequence number, not just "invalid."
   (`eval/factory_suite.json`, 12 cases) borrows AgentDojo's declarative
   shape, not the library itself, since the gateway's decision logic is
   deterministic and framework-agnostic.
-- **Challenge alignment:** manufacturing factory-floor copilot; local
-  lineage and residency evidence; deterministic exact-shingle/entity taint
-  matching as the privacy/security technique; URL-mode human approval; GDPR,
-  NIS2, and EU AI Act citations; Azure OpenAI in Sweden Central.
+- **Challenge alignment:** manufacturing factory-floor copilot answering
+  from on-site maintenance records; a lineage panel that traces each decision
+  to the source record it derived from (the brief's "show it live" item);
+  deterministic exact-shingle/entity taint matching as the privacy/security
+  technique; URL-mode human approval as the oversight moment; GDPR Art. 44
+  for operator data, NIS2 Art. 21, and EU AI Act Art. 14 named on every
+  rule, with the ledger and lineage panel as the workplace-AI transparency
+  evidence; Azure OpenAI in Sweden Central.
 - **Not a Foundry Local / on-device LLM fallback** — explicitly out of
   scope (P3), not started.
 

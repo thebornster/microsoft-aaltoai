@@ -68,7 +68,7 @@ point (the tool-call boundary). Same audit record.
 | `gdpr-art44-transfer` | GDPR Art. 44 | EU personal data → non-EU destination | **DENY** (hard — no human override; a human cannot override the law) |
 | `nis2-art21-untrusted-egress` | NIS2 Art. 21(2)(e) | Untrusted-derived data → external egress | **REVIEW** |
 | `nis2-art21-session-exposure` | NIS2 Art. 21(2)(e) | Untrusted content ingested this session → any external egress | **REVIEW** (fallback, catches paraphrase evasion) |
-| `aiact-art14-cross-source` | EU AI Act Art. 14 (applies Dec 2027) | Untrusted content steering a call that also carries personal data | **REVIEW** |
+| `aiact-art14-cross-source` | EU AI Act Art. 14 (high-risk duties phase in 2026-2027) | Untrusted content steering a call that also carries personal data | **REVIEW** |
 
 Most-restrictive-wins: DENY > REVIEW > ALLOW. Every fired rule is recorded
 in the tamper-evident ledger, citation included.

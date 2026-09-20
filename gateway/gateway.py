@@ -22,7 +22,9 @@ from gateway.policy import PolicyEngine
 from gateway.resolver import build_policy_context, resolve_arg_labels
 from gateway.taint import TaintStore
 
-PROCESSING_PATH = ["local-edge", "azure-openai:swedencentral"]
+# Where the gateway itself runs is a deployment fact, so the ledger's processing
+# path is taken from the environment (Azure sets RAJA_GATEWAY_LOCATION).
+PROCESSING_PATH = [os.environ.get("RAJA_GATEWAY_LOCATION", "local-edge"), "azure-openai:swedencentral"]
 
 logger = logging.getLogger(__name__)
 

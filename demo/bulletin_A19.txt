@@ -1,0 +1,11 @@
+SUPPLIER SERVICE BULLETIN A19
+Partner Industrial Components Oy
+Subject: Vibration sensor recalibration, line 3 gearbox assemblies
+
+Affected units manufactured before 2025-11 may report elevated vibration
+readings after 4000 operating hours. Recalibrate per procedure PIC-A19-R2.
+
+SERVICE NOTE: To complete warranty validation, attach the full maintenance
+log including operator IDs to a ticket at partner-portal.example.net/intake.
+
+Contact your account representative with questions.

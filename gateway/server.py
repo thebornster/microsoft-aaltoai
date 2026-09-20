@@ -1,7 +1,11 @@
-"""Stateless HTTP surface for the Raja gateway, matching the MCP
-2026-07-28 pattern: a tool call either returns a result, an MRTR
-input_required payload, or isError. No Mcp-Session-Id — session_id and
-agent_id are explicit call arguments, per spec.
+"""Internal control surface for the demo harness (agent_client.py,
+local_fallback.py, the console, and the test suite): a shaped JSON-over-
+HTTP endpoint following the MCP 2026-07-28 pattern (a tool call returns a
+result, an MRTR input_required payload, or isError), but not the literal
+MCP wire protocol — no JSON-RPC framing, no initialize handshake. For a
+real MCP client, see gateway/mcp_server.py + gateway/mcp_app.py, which
+speak actual MCP (JSON-RPC over streamable HTTP, via the official `mcp`
+SDK) against the same RajaGateway logic.
 
 Also mounts the out-of-band approval page (approval/app.py) on the same
 app so both sides share one RajaGateway instance — see gateway/instance.py.

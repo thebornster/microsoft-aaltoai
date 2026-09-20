@@ -1,0 +1,20 @@
+# Captured 2026-09-20 from `uv run python -m demo.local_fallback` against a
+# freshly reset gateway (RAJA_RESET_DEMO_STATE=1 ./demo/run_demo.sh). This is
+# what to show a judge if the live Azure OpenAI path is unavailable on the
+# day — same four beats, same gateway, no LLM involved, fully reproducible.
+
+Raja local fallback demo — no Azure/Teams credentials required. gateway: http://127.0.0.1:8000
+
+1. Benign — read a maintenance log, no policy friction
+  [PASS] read_maintenance_log returns a result, not isError/input_required
+2. Attack — poisoned bulletin steers a personal-data ticket to a non-EU sink
+  [PASS] search_supplier_docs ingests the poisoned bulletin
+  [PASS] post_supplier_ticket to us-east is denied
+  [PASS] denial cites gdpr-art44-transfer
+3. Attack (paraphrased) — REVIEW, human approval, exact-call resume
+  [PASS] session-exposure fallback rule forces REVIEW even without a fingerprint match
+  [PASS] resume with the bound requestState succeeds after approval
+4. Replay — the same requestState cannot be consumed twice
+  [PASS] second use of an already-consumed requestState is rejected
+
+All four beats reproduced over HTTP. Verify the ledger with: uv run python verify_ledger.py

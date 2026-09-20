@@ -147,7 +147,7 @@ Single process on `:8000` (see above). Exact reproduction steps are in "How to r
 Gateway runs on Azure Container Apps at
 https://raja-gateway.proudsea-6cbc91b7.swedencentral.azurecontainerapps.io
 (rg `raja-demo`, env `raja-gateway-env`, ACR `caf99923d346acr`, image tag
-`v3`). Verified: `/healthz` 200, MCP `initialize` + `tools/list` over
+`v4`). Verified: `/healthz` 200, MCP `initialize` + `tools/list` over
 streamable HTTP, and `demo.local_fallback` passes all four beats against it
 (ALLOW, DENY, REVIEW+approve+resume, replay rejected). The console and the
 Azure OpenAI agent point at it via `RAJA_GATEWAY_URL`. The secrets

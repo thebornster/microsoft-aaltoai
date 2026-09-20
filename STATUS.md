@@ -147,7 +147,24 @@ Single process on `:8000` (see above). Exact reproduction steps are in "How to r
 Gateway runs on Azure Container Apps at
 https://raja-gateway.proudsea-6cbc91b7.swedencentral.azurecontainerapps.io
 (rg `raja-demo`, env `raja-gateway-env`, ACR `caf99923d346acr`, image tag
-`v4`). Verified: `/healthz` 200, MCP `initialize` + `tools/list` over
+`cream-v2`). The deployed app is `gateway.mcp_app:app` and serves the judge
+site: `/` (overview), `/agent` (browser playground), `/dashboard` (live
+ledger view), `/deployment/data`, plus `/mcp` (real MCP), `/mcp/call`, and
+`/approve/*`. All pages use one cream palette. The Container App also sets
+`RAJA_APPROVAL_TTL_SECONDS=1800` so a REVIEW approval survives a 30-minute
+demo instead of the 5-minute production default, and
+`RAJA_PUBLIC_APPROVAL_LINKS=1` so the approval URL carries the secret.
+There is no persistent volume: every redeploy or restart resets the ledger to
+0 records, so run `./demo/run_deployed_demo.sh` (or the `/agent` cards) right
+before showing `/dashboard`.
+
+Pre-submission pass (2026-09-20, later session): verified live in Chrome
+(all three `/agent` cards, approval page, approve, Continue, replay) and via
+`demo.local_fallback` and the real Azure OpenAI agent against the deployed
+URL. Fixed: read-only ledger records now log `backend_invoked=true` (the
+dashboard showed "held / blocked" next to ALLOW), approval result pages use
+the shared shell, and the playground no longer dead-ends when Continue is
+clicked before the human has approved. Verified: `/healthz` 200, MCP `initialize` + `tools/list` over
 streamable HTTP, and `demo.local_fallback` passes all four beats against it
 (ALLOW, DENY, REVIEW+approve+resume, replay rejected). The Azure OpenAI agent and
 `demo.local_fallback` point at it via `RAJA_GATEWAY_URL`; the Streamlit console
@@ -166,7 +183,7 @@ For development/manual control:
 
 ```bash
 cd /Users/borna/hackathon-microsoft
-uv run pytest -q                                    # 69 tests, should be green
+uv run pytest -q                                    # 72 tests, should be green
 uv run python -m eval.run_suite                     # eval suite pass/fail table (12/12 should pass)
 
 # ONE process serves both /mcp/call and /approve/* — do not also start approval.app:app separately

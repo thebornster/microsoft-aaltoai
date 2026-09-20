@@ -8,9 +8,9 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 
 ## NEXT ACTION (read this first)
 
-P0 and P1 are both fully done and fully live-demoed (see below). Both P2 eval-suite and Teams-card items are now done too. Nothing is broken, all tests green (40, up from 34). The next unit of work — pick this up with no further questions unless you hit a real blocker:
+P0 and P1 are both fully done and fully live-demoed (see below). P2 eval-suite, Teams-card, and console polish (lineage graph + residency map) are now all done too. Nothing is broken, all tests green (40, unchanged — the console has no pytest coverage, see note below). The next unit of work — pick this up with no further questions unless you hit a real blocker:
 
-1. **Console polish** (lineage graph, residency diagram) and the real `demo/bulletin_A19.pdf` (currently a `.txt` stand-in) are what's left of P2 — lowest priority of what remains, do these next if there's time.
+1. The real `demo/bulletin_A19.pdf` (currently a `.txt` stand-in) is the only P2 item left — lowest priority, do this next if there's time.
 2. Foundry Local semantic fallback is P3 and explicitly optional — do not start it unless asked directly.
 3. The Teams webhook has never been fired against a real Power Automate Workflows URL (no `RAJA_TEAMS_WEBHOOK_URL` configured in this environment) — it's unit-tested with a mocked `httpx.post`, not live-verified against real Teams. Only chase a live Teams test if a judge specifically asks to see the card render, and you'd need a real Workflows webhook URL from the user first.
 
@@ -39,8 +39,8 @@ If you get here and disagree that console polish should be next, say so and expl
 **P2 — eval suite and Teams card done, rest not started (see NEXT ACTION):**
 - Eval suite done: `eval/factory_suite.json` (12 declarative cases, 6 benign / 6 attack) + `eval/run_suite.py` (runner, prints a pass/fail table, `uv run python -m eval.run_suite`), wrapped by `tests/test_eval_suite.py` so it runs under pytest too. See "Eval suite" section below for design notes.
 - Teams Adaptive Card / Power Automate Workflows webhook done: `approval/teams.py`. See "Teams notification" section below for design notes.
-- Console polish (lineage graph, residency diagram) — **do this next**
-- Real `demo/bulletin_A19.pdf` (currently `demo/bulletin_A19.txt`, same injected payload text, no PDF-writer dependency added)
+- Console polish done: `console/app.py` now has two tabs — "Decision feed & lineage" (per-record lineage as a graphviz DAG: source ingress calls → egress sink, colored by trust/residency, with fired rules as a dashed side-note) and "Residency map" (one node per destination region actually used across the ledger, EU-bordered vs. non-EU, colored by the worst decision that region saw). Pure-function DOT builders (`_origin_index`, `_lineage_dot`, `_residency_dot`) — no new dependency added, `st.graphviz_chart` accepts a raw DOT string directly, no `graphviz` pip package or system `dot` binary needed. Verified with a headless `streamlit run` smoke test (HTTP 200, no traceback) against the real ledger, plus a standalone script exec'ing just the function defs (no ScriptRunContext) with synthetic multi-source records to eyeball the DOT output. No pytest coverage added for the console — same as before this change, it was untested by pytest; revisit only if asked.
+- Real `demo/bulletin_A19.pdf` (currently `demo/bulletin_A19.txt`, same injected payload text, no PDF-writer dependency added) — **do this next**
 
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback

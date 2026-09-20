@@ -8,14 +8,13 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 
 ## NEXT ACTION (read this first)
 
-P0 and P1 are both fully done and fully live-demoed (see below). Nothing is broken, all tests green. The next unit of work — pick this up with no further questions unless you hit a real blocker:
+P0 and P1 are both fully done and fully live-demoed (see below). The eval suite (P2 item 1) is now done too. Nothing is broken, all tests green (34, up from 33). The next unit of work — pick this up with no further questions unless you hit a real blocker:
 
-1. **Start the AgentDojo eval suite** (`eval/factory_suite.json`, 12 cases: 6 benign, 6 attack) — this was flagged as the bigger differentiator vs. the Teams Adaptive Card polish item, so it's the default next step. Look at `ethz-spylab/agentdojo` for the harness shape; the 12 cases should exercise the same tool surface as the demo (`config/tools.yaml`) with variations on: benign read-only tasks, benign egress tasks, injection-via-bulletin attacks that should DENY (personal data + non-EU sink), injection attacks that should REVIEW (no personal data, session-fallback rule), and at least one multi-hop taint case (data crosses two tool calls before hitting egress).
-2. Once the eval suite runs and reports a pass/fail table, do the Teams Adaptive Card / Power Automate webhook (P2, polish — the approval page alone already satisfies the HITL requirement, so this is nice-to-have, not blocking).
-3. Console polish (lineage graph, residency diagram) and the real `demo/bulletin_A19.pdf` (currently a `.txt` stand-in) are lowest priority — only do these if there's time left after the eval suite and Teams card.
-4. Foundry Local semantic fallback is P3 and explicitly optional — do not start it unless asked directly.
+1. **Teams Adaptive Card / Power Automate webhook** (P2, polish — the approval page alone already satisfies the HITL requirement, so this is nice-to-have, not blocking).
+2. Console polish (lineage graph, residency diagram) and the real `demo/bulletin_A19.pdf` (currently a `.txt` stand-in) are lowest priority — only do these if there's time left after the Teams card.
+3. Foundry Local semantic fallback is P3 and explicitly optional — do not start it unless asked directly.
 
-If you get here and disagree that AgentDojo should be next, say so and explain why before switching — otherwise just start it.
+If you get here and disagree that the Teams card should be next, say so and explain why before switching — otherwise just start it.
 
 ## Build status vs. the design doc's priority list
 
@@ -37,16 +36,16 @@ If you get here and disagree that AgentDojo should be next, say so and explain w
 - Session-exposure fallback rule (`nis2-art21-session-exposure` in `config/policy.yaml`)
 - `verify_ledger.py`
 
-**P2 — not started (see NEXT ACTION):**
-- AgentDojo eval suite + `eval/factory_suite.json` (12 cases) — **do this next**
-- Teams Adaptive Card / Power Automate Workflows webhook
+**P2 — eval suite done, rest not started (see NEXT ACTION):**
+- Eval suite done: `eval/factory_suite.json` (12 declarative cases, 6 benign / 6 attack) + `eval/run_suite.py` (runner, prints a pass/fail table, `uv run python -m eval.run_suite`), wrapped by `tests/test_eval_suite.py` so it runs under pytest too. See "Eval suite" section below for design notes.
+- Teams Adaptive Card / Power Automate Workflows webhook — **do this next**
 - Console polish (lineage graph, residency diagram)
 - Real `demo/bulletin_A19.pdf` (currently `demo/bulletin_A19.txt`, same injected payload text, no PDF-writer dependency added)
 
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback
 
-Tests: 33 passing, `uv run pytest -q`. No known failing or flaky tests.
+Tests: 34 passing, `uv run pytest -q`. No known failing or flaky tests.
 
 ## Key decisions made (not obvious from re-reading the code)
 
@@ -57,6 +56,12 @@ Tests: 33 passing, `uv run pytest -q`. No known failing or flaky tests.
 - `demo/agent_client.py` accepts the full Azure-portal "Target URI" for `AZURE_OPENAI_ENDPOINT` (parses out base endpoint / deployment / api-version via `_parse_azure_endpoint`), since that's what the portal's copy button actually gives you, not a bare endpoint.
 - **Gateway and approval page are ONE process, not two.** `gateway/instance.py` holds the single shared `RajaGateway`; `gateway/server.py` imports it and mounts `approval/app.py`'s `APIRouter`. Only ever start `uvicorn gateway.server:app` — do not separately start `uvicorn approval.app:app` for the live demo (that standalone `app` object exists only for isolated testing and would create a second, disconnected in-memory approval store — see "Bug found and fixed" below).
 - **`demo/agent_client.py --resume`** persists pending-approval state (messages, session_id, agent_id, tool name/args, `requestState`) to `data/agent_pending.json` when a call returns `input_required`. After a human approves/rejects via the approval page, running `--resume` replays the exact call with the bound `requestState`, lets the gateway consume the single-use capability token, and feeds the real outcome back into the same conversation so the agent reports it naturally. This is real orchestration code, not a demo hack — it's the thing that makes the MRTR round trip actually work end-to-end instead of being a dead end after `input_required`.
+
+## Eval suite
+
+- **Scripted against `gateway.call()` directly, not through the LLM.** Per the design doc's own distinction ("the scripted client is a gateway regression harness, never the demo"), the eval suite is that harness formalized: `eval/factory_suite.json` declares 12 cases (tool + args steps, expected final decision, optionally expected fired-rule ids or an error substring), `eval/run_suite.py` replays each case's steps through a fresh `RajaGateway` (isolated tmp ledger + session per case) and classifies the final response as ALLOW/REVIEW/DENY/ERROR. No AgentDojo package dependency was added — the 2026 AgentDojo harness shape (declarative task suite, benign vs. attack split, pass/fail table) was borrowed, not the library itself, since the gateway's decision logic is deterministic and framework-agnostic already (see `gateway/gateway.py`'s own docstring). Revisit only if a judge specifically wants literal `ethz-spylab/agentdojo` integration.
+- **12 cases, 6 benign / 6 attack, all passing:** benign covers plain read-only calls, an untainted egress (internal and external), trusted eu_personal data flowing to an internal EU sink (allowed — only non-EU destinations are restricted), and untrusted content ingested but egressed only internally (session-fallback rule is scoped to `egress_external` only, confirmed here). Attack covers: injected-bulletin narrative producing a hard DENY (`a1`), the same DENY with no injection framing at all — pure data exfil (`a2`, isolates `gdpr-art44-transfer` alone), a verbatim bulletin span tripping the exact-shingle matcher into REVIEW (`a3`), a paraphrased ticket that dodges both matchers but still gets caught by the session-exposure fallback rule (`a4` — the same scenario that was live-demoed), a multi-hop case where untrusted bulletin text and eu_personal log data are ingested via two separate prior calls and combined in a third call's egress (`a5` — the only case that exercises `aiact-art14-cross-source`, though it's always dominated by the DENY-severity `gdpr-art44-transfer` once eu_personal residency is involved, since the manifest has no residency tier between `public` and `eu_personal` — noted as an observation, not something to fix), and a capability-token tamper test where a retry swaps in different args than the ones bound to `requestState` (`a6` — confirms the hash-mismatch check runs before the approval-state check, so tampering is rejected structurally, not just by convention).
+- **`rules_fired` / `error_contains` assertions are substring checks against the response text**, not a structured field — the gateway's DENY/REVIEW responses embed fired rule ids in the human-readable `error`/`message` string (`gateway/gateway.py`'s `fired_desc`/`fired` construction), there's no separate machine-readable rules array on the wire. Fine for a regression harness; would need a real field if this ever needs to be machine-consumed by something other than this suite.
 
 ## Bug found and fixed (previous checkpoint)
 
@@ -78,7 +83,8 @@ Not yet tested live: sending a *second* retry with the same already-consumed `re
 
 ```bash
 cd /Users/borna/hackathon-microsoft
-uv run pytest -q                                    # 33 tests, should be green
+uv run pytest -q                                    # 34 tests, should be green
+uv run python -m eval.run_suite                     # eval suite pass/fail table (12/12 should pass)
 
 # ONE process serves both /mcp/call and /approve/* — do not also start approval.app:app separately
 uv run uvicorn gateway.server:app --port 8000 &

@@ -37,6 +37,7 @@ def test_allow_meta_is_structured(gw):
     assert meta["sources"]
     assert meta["matched_entities"] == []
     assert meta["shingle_overlap"] == 0
+    assert meta["backend_invoked"] is True
 
 
 def test_deny_meta_names_the_fired_rule_and_regulation_without_parsing_error_text(gw):
@@ -64,6 +65,7 @@ def test_deny_meta_names_the_fired_rule_and_regulation_without_parsing_error_tex
     assert any("GDPR Art. 44" in r for r in meta["regulations"])
     assert meta["sources"]
     assert "EMP-4471" in meta["matched_entities"]
+    assert meta["backend_invoked"] is False
 
 
 def test_review_meta_reports_decision_and_rules(gw):

@@ -58,3 +58,12 @@ def test_unknown_approval_id_renders_gracefully():
     r = client.get("/approve/does-not-exist", params={"secret": DEMO_SECRET})
     assert r.status_code == 200
     assert "Unknown approval" in r.text
+
+
+def test_agent_controlled_fields_are_html_escaped():
+    approval_id = _trigger_review()
+    approval = gateway.approval_store.get(approval_id)
+    approval.agent_id = "<script>alert(1)</script>"
+    r = client.get(f"/approve/{approval_id}", params={"secret": DEMO_SECRET})
+    assert "<script>alert(1)</script>" not in r.text
+    assert "&lt;script&gt;" in r.text

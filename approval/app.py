@@ -11,6 +11,7 @@ demo-only stand-in for that).
 """
 from fastapi import APIRouter, FastAPI, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse
+from html import escape
 
 from approval.tokens import TokenError
 from gateway.env import is_demo_mode
@@ -55,16 +56,28 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
         return _page(f"{_DEMO_BANNER}<h1>Unknown approval</h1>")
 
     if approval.decision != "pending":
-        return _page(f"{_DEMO_BANNER}<h1>Already {approval.decision}</h1><p>by {approval.decided_by}</p>")
+        return _page(f"{_DEMO_BANNER}<h1>Already {escape(approval.decision)}</h1><p>by {escape(approval.decided_by or '')}</p>")
+
+    rules = "".join(f"<li><code>{escape(rule)}</code></li>" for rule in approval.rules_fired) or "<li>none</li>"
+    regulations = "".join(f"<li>{escape(regulation)}</li>" for regulation in approval.regulations) or "<li>none</li>"
+    sources = "".join(f"<li>{escape(source)}</li>" for source in approval.sources) or "<li>none</li>"
+    entities = "".join(f"<li>{escape(entity)}</li>" for entity in approval.matched_entities) or "<li>none</li>"
+    safe_id = escape(approval_id, quote=True)
+    safe_secret = escape(secret or "", quote=True)
 
     return _page(f"""
-{_DEMO_BANNER}
+{ _DEMO_BANNER}
 <h1>Raja: human approval required</h1>
-<p><strong>Tool:</strong> {approval.tool}</p>
-<p><strong>Session:</strong> {approval.session_id} &nbsp; <strong>Agent:</strong> {approval.agent_id}</p>
+<p><strong>Tool:</strong> {escape(approval.tool)}</p>
+<p><strong>Session:</strong> {escape(approval.session_id)} &nbsp; <strong>Agent:</strong> {escape(approval.agent_id)}</p>
+<h2>Why this call needs review</h2>
+<p><strong>Shingle overlap:</strong> {approval.shingle_overlap}</p>
+<strong>Rules</strong><ul>{rules}</ul>
+<strong>Regulations</strong><ul>{regulations}</ul>
+<strong>Sources</strong><ul>{sources}</ul>
+<strong>Matched entities</strong><ul>{entities}</ul>
 <p>This call cannot proceed without a human decision. The agent cannot answer this page for you.</p>
-<form method="post" action="/approve/{approval_id}/decide">
-  <input type="hidden" name="secret" value="{secret}">
+<form method="post" action="/approve/{safe_id}/decide?secret={safe_secret}">
   <input type="hidden" name="actor" value="marika@company.eu">
   <button class="approve" name="decision" value="approved" type="submit">Approve</button>
   <button class="reject" name="decision" value="rejected" type="submit">Reject</button>
@@ -73,13 +86,18 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
 
 
 @router.post("/approve/{approval_id}/decide", response_class=HTMLResponse)
+@router.post("/approve/{approval_id}", response_class=HTMLResponse, include_in_schema=False)
 def decide(
     approval_id: str,
     decision: str = Form(...),
     actor: str = Form(...),
-    secret: str | None = Form(default=None),
+    secret: str | None = Query(default=None),
+    form_secret: str | None = Form(default=None, alias="secret"),
 ) -> HTMLResponse:
-    _require_secret(secret)
+    # The second route preserves compatibility with clients that naively
+    # split an approval URL at the final slash before posting.
+    supplied_secret = (secret or form_secret or "").removesuffix("/decide")
+    _require_secret(supplied_secret)
     try:
         approval = gateway.approval_store.decide(
             approval_id=approval_id, decision=decision, actor=actor, server_key=gateway.server_key

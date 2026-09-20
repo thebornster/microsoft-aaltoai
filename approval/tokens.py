@@ -15,7 +15,7 @@ import json
 import secrets
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 from gateway.canonical import canonical_json, sha256_hex
@@ -66,6 +66,12 @@ class Approval:
     decided_at: float | None = None
     capability_token: str | None = None
     consumed: bool = False
+    rules_fired: list[str] = field(default_factory=list)
+    regulations: list[str] = field(default_factory=list)
+    sources: list[str] = field(default_factory=list)
+    matched_entities: list[str] = field(default_factory=list)
+    shingle_overlap: int = 0
+    arg_labels: dict[str, Any] = field(default_factory=dict)
 
 
 class ApprovalStore:
@@ -84,6 +90,7 @@ class ApprovalStore:
         self._db = db
 
     def _hydrate_locked(self, approval_id: str) -> Approval | None:
+        approval_id = approval_id.split("?", 1)[0]
         approval = self._approvals.get(approval_id)
         if approval is not None or self._db is None:
             return approval
@@ -103,11 +110,17 @@ class ApprovalStore:
             decided_at=row["decided_at"],
             capability_token=row["capability_token"],
             consumed=row["consumed"],
+            rules_fired=row.get("rules_fired", []),
+            regulations=row.get("regulations", []),
+            sources=row.get("sources", []),
+            matched_entities=row.get("matched_entities", []),
+            shingle_overlap=row.get("shingle_overlap", 0),
+            arg_labels=row.get("arg_labels", {}),
         )
         self._approvals[approval_id] = approval
         return approval
 
-    def create(self, call_hash: str, tool: str, session_id: str, agent_id: str, ttl_seconds: int = DEFAULT_TTL_SECONDS) -> Approval:
+    def create(self, call_hash: str, tool: str, session_id: str, agent_id: str, ttl_seconds: int = DEFAULT_TTL_SECONDS, **metadata: Any) -> Approval:
         approval_id = secrets.token_urlsafe(16)
         now = time.time()
         approval = Approval(
@@ -118,6 +131,12 @@ class ApprovalStore:
             agent_id=agent_id,
             created_at=now,
             exp=now + ttl_seconds,
+            rules_fired=list(metadata.get("rules_fired", [])),
+            regulations=list(metadata.get("regulations", [])),
+            sources=list(metadata.get("sources", [])),
+            matched_entities=list(metadata.get("matched_entities", [])),
+            shingle_overlap=int(metadata.get("shingle_overlap", 0)),
+            arg_labels=dict(metadata.get("arg_labels", {})),
         )
         with self._lock:
             self._approvals[approval_id] = approval
@@ -132,6 +151,7 @@ class ApprovalStore:
     def decide(self, approval_id: str, decision: str, actor: str, server_key: bytes) -> Approval:
         if decision not in ("approved", "rejected"):
             raise TokenError(f"invalid decision '{decision}'")
+        approval_id = approval_id.split("?", 1)[0]
         with self._lock:
             approval = self._hydrate_locked(approval_id)
             if approval is None:

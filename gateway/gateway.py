@@ -5,6 +5,8 @@ agnostic so it's testable without HTTP. server.py wraps this in FastAPI.
 import datetime
 import logging
 import pathlib
+import os
+from urllib.parse import quote
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -12,6 +14,7 @@ from approval.tokens import ApprovalStore, TokenError, make_request_state, verif
 from gateway.backends import BACKENDS, BackendError
 from gateway.canonical import call_hash as compute_call_hash
 from gateway.db import StateDB
+from gateway.env import approval_ttl_seconds
 from gateway.ledger import Ledger
 from gateway.labeller import ingest_result
 from gateway.manifest import ToolManifest
@@ -19,7 +22,6 @@ from gateway.policy import PolicyEngine
 from gateway.resolver import build_policy_context, resolve_arg_labels
 from gateway.taint import TaintStore
 
-APPROVAL_BASE_URL = "https://raja.local/approve"
 PROCESSING_PATH = ["local-edge", "azure-openai:swedencentral"]
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,7 @@ def _meta(
     fired_rules: list | None = None,
     sources: list[str] | None = None,
     matches: list | None = None,
+    backend_invoked: bool = False,
 ) -> dict[str, Any]:
     """Structured decision metadata, additive alongside the existing
     human-readable result/error fields — a judge/consumer can read
@@ -61,6 +64,7 @@ def _meta(
         "sources": sources or [],
         "matched_entities": sorted({e for m in matches for e in m.matched_entities}),
         "shingle_overlap": max((m.shingle_overlap for m in matches), default=0),
+        "backend_invoked": backend_invoked,
     }
 
 
@@ -154,8 +158,9 @@ class RajaGateway:
             arg_labels={"trust": label.trust, "residency": label.residency, "sources": [source_id]},
             destination_region=None,
             human=None,
+            backend_invoked=False,
         )
-        return {"result": result, "meta": _meta("ALLOW", sources=[source_id])}
+        return {"result": result, "meta": _meta("ALLOW", sources=[source_id], backend_invoked=True)}
 
     def _call_egress(self, tool_def, args, session, session_id, agent_id) -> dict[str, Any]:
         payload = self._payload_args(args)
@@ -181,10 +186,11 @@ class RajaGateway:
                 arg_labels=label_record,
                 destination_region=tool_def.destination_region,
                 human=None,
+                backend_invoked=True,
             )
             return {
                 "result": result,
-                "meta": _meta("ALLOW", fired_rules=decision.fired_rules, sources=arg_labels.sources, matches=arg_labels.matches),
+                "meta": _meta("ALLOW", fired_rules=decision.fired_rules, sources=arg_labels.sources, matches=arg_labels.matches, backend_invoked=True),
             }
 
         if decision.decision == "deny":
@@ -197,6 +203,7 @@ class RajaGateway:
                 arg_labels=label_record,
                 destination_region=tool_def.destination_region,
                 human=None,
+                backend_invoked=False,
             )
             fired = ", ".join(f"{r.id} ({r.regulation})" for r in decision.fired_rules)
             return {
@@ -207,7 +214,16 @@ class RajaGateway:
 
         # review
         ch = compute_call_hash(tool=tool_def.name, args=args, session_id=session_id, agent_id=agent_id)
-        approval = self.approval_store.create(call_hash=ch, tool=tool_def.name, session_id=session_id, agent_id=agent_id)
+        approval = self.approval_store.create(
+            call_hash=ch, tool=tool_def.name, session_id=session_id, agent_id=agent_id,
+            ttl_seconds=approval_ttl_seconds(),
+            rules_fired=rules_fired,
+            regulations=[r.regulation for r in decision.fired_rules],
+            sources=arg_labels.sources,
+            matched_entities=sorted({e for m in arg_labels.matches for e in m.matched_entities}),
+            shingle_overlap=max((m.shingle_overlap for m in arg_labels.matches), default=0),
+            arg_labels=label_record,
+        )
         self._log(
             session=session_id,
             agent_id=agent_id,
@@ -217,6 +233,7 @@ class RajaGateway:
             arg_labels=label_record,
             destination_region=tool_def.destination_region,
             human={"decision": "PENDING", "approval_id": approval.approval_id},
+            backend_invoked=False,
         )
         req_state = make_request_state(self.server_key, approval.approval_id, ch, approval.exp)
         fired_desc = "; ".join(f"{r.id}: {r.description}" for r in decision.fired_rules)
@@ -239,7 +256,7 @@ class RajaGateway:
                     "method": "elicitation/create",
                     "params": {
                         "mode": "url",
-                        "url": f"{APPROVAL_BASE_URL}/{approval.approval_id}",
+                        "url": self._approval_url(approval.approval_id),
                         "message": f"Raja: this call needs human approval ({fired_desc})",
                     },
                 }
@@ -276,13 +293,21 @@ class RajaGateway:
                         "method": "elicitation/create",
                         "params": {
                             "mode": "url",
-                            "url": f"{APPROVAL_BASE_URL}/{approval_id}",
+                            "url": self._approval_url(approval_id),
                             "message": "Raja: still waiting for human approval",
                         },
                     }
                 },
                 "requestState": request_state,
-                "meta": _meta("REVIEW"),
+                "meta": {
+                    "decision": "REVIEW",
+                    "rules_fired": approval.rules_fired,
+                    "regulations": approval.regulations,
+                    "sources": approval.sources,
+                    "matched_entities": approval.matched_entities,
+                    "shingle_overlap": approval.shingle_overlap,
+                    "backend_invoked": False,
+                },
             }
 
         if approval.decision == "rejected":
@@ -291,12 +316,25 @@ class RajaGateway:
                 agent_id=agent_id,
                 tool=tool_def_name,
                 decision="DENY",
-                rules_fired=[],
-                arg_labels={},
+                rules_fired=approval.rules_fired,
+                arg_labels=approval.arg_labels,
                 destination_region=None,
                 human={"decision": "REJECT", "by": approval.decided_by, "at": approval.decided_at},
+                backend_invoked=False,
             )
-            return {"isError": True, "error": f"rejected by {approval.decided_by}", "meta": _meta("DENY")}
+            return {
+                "isError": True,
+                "error": f"rejected by {approval.decided_by}",
+                "meta": {
+                    "decision": "DENY",
+                    "rules_fired": approval.rules_fired,
+                    "regulations": approval.regulations,
+                    "sources": approval.sources,
+                    "matched_entities": approval.matched_entities,
+                    "shingle_overlap": approval.shingle_overlap,
+                    "backend_invoked": False,
+                },
+            }
 
         try:
             self.approval_store.consume(approval_id=approval_id, call_hash=retried_hash)
@@ -309,12 +347,32 @@ class RajaGateway:
             agent_id=agent_id,
             tool=tool_def_name,
             decision="ALLOW",
-            rules_fired=[],
-            arg_labels={},
+            rules_fired=approval.rules_fired,
+            arg_labels=approval.arg_labels,
             destination_region=self.manifest.get(tool_def_name).destination_region,
             human={"decision": "APPROVE", "by": approval.decided_by, "at": approval.decided_at},
+            backend_invoked=True,
         )
-        return {"result": result, "meta": _meta("ALLOW")}
+        return {
+            "result": result,
+            "meta": {
+                "decision": "ALLOW",
+                "rules_fired": approval.rules_fired,
+                "regulations": approval.regulations,
+                "sources": approval.sources,
+                "matched_entities": approval.matched_entities,
+                "shingle_overlap": approval.shingle_overlap,
+                "backend_invoked": True,
+            },
+        }
+
+    @staticmethod
+    def _approval_url(approval_id: str) -> str:
+        base = os.environ.get("RAJA_PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+        if os.environ.get("RAJA_DEMO_MODE") == "1":
+            secret = quote(os.environ.get("RAJA_DEMO_SECRET", "raja-demo"), safe="")
+            return f"{base}/approve/{approval_id}?secret={secret}"
+        return f"{base}/approve/{approval_id}"
 
 
 def build_gateway(

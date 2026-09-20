@@ -228,7 +228,7 @@ Gateway returns on REVIEW:
       "method": "elicitation/create",
       "params": {
         "mode": "url",
-        "url": "https://raja.local/approve/<approval_id>",
+        "url": "RAJA_PUBLIC_BASE_URL/approve/<approval_id>",
         "message": "Raja: this call needs human approval (nis2-art21-untrusted-egress)"
       }
     }
@@ -381,7 +381,7 @@ residency-hard-boundary — argument contains data derived from maintenance_log_
 
 3:30–4:15 — Proof. Open the ledger. Show the record: labels, rules fired, processing path (local-edge → azure-openai:swedencentral), human decision. Then tamper with an old entry, run verify_ledger.py, show it fail at the exact sequence number. "This is the artefact Marika hands a NIS2 auditor."
 
-4:15–5:00 — Numbers, limits, close. AgentDojo table: ASR down, utility held, review rate under 10%. Then the limitations slide — paraphrase evasion, adaptive attackers, static-benchmark validation. Close: "The AI Act's high-risk deadline moved to December 2027. That's not a reprieve — it's the window to build human oversight into the architecture instead of bolting it on. Raja is what using that window looks like."
+4:15–5:00 — Numbers, limits, close. Show the reproducible gateway suite: 6/6 benign, 6/6 attack cases, 0% benign review rate, 100% attack containment (DENY, REVIEW, or structurally rejected ERROR), and the measured mean gateway latency printed by `eval.run_suite`. Be precise that this is a 12-case gateway regression suite, not literal AgentDojo. Then show the limitations slide — paraphrase evasion, adaptive attackers, and the scoped benchmark. Close: "The AI Act's high-risk deadline moved to December 2027. That's not a reprieve — it's the window to build human oversight into the architecture instead of bolting it on. Raja is what using that window looks like."
 
 15. Judge Q&A prep
 "Why doesn't Purview / Agent 365 / Prompt Shields already do this?" → §5. Identity and static scope vs. per-call data flow; the confused deputy passes every static check by construction. Close with the Data Guardian analogy.
@@ -393,6 +393,12 @@ residency-hard-boundary — argument contains data derived from maintenance_log_
 "Isn't this just a firewall with extra steps?" → A firewall filters destinations. Raja filters destination × data provenance. Same endpoint is fine for one payload and illegal for another; only provenance tells you which.
 
 "What's the latency cost?" → Measure it and know it. Shingle intersection is sub-millisecond; the honest cost is the human review, which is why review rate is the metric that matters.
+
+"How do you prove the blocked data did not leave?" → The gateway evaluates policy
+before calling the sink. Every response and ledger record includes
+`backend_invoked`; the hard-DENY incident view shows `backend_invoked: false`.
+The demo backend is instrumented behind the same gateway boundary, so the
+evidence is an execution fact, not merely a returned error string.
 
 "Does this work outside MCP?" → The enforcement point is the tool boundary, so anything with one — OpenAI function calling, LangChain, Foundry agents. MCP is the first implementation because it's where the boundary is already standardised.
 

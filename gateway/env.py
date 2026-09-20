@@ -18,6 +18,14 @@ def is_demo_mode() -> bool:
     return os.environ.get("RAJA_DEMO_MODE") == "1"
 
 
+def approval_ttl_seconds() -> int:
+    default = 30 * 60 if is_demo_mode() else 5 * 60
+    try:
+        return max(1, int(os.environ.get("RAJA_APPROVAL_TTL_SECONDS", default)))
+    except ValueError as exc:
+        raise ConfigError("RAJA_APPROVAL_TTL_SECONDS must be an integer") from exc
+
+
 def require_secret(env_var: str, demo_default: str) -> str:
     """Return os.environ[env_var], or demo_default only under RAJA_DEMO_MODE=1.
 

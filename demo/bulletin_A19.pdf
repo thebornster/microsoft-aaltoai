@@ -1,18 +1,47 @@
 %PDF-1.4
+%‚„œ”
 1 0 obj
-<< /Type /Catalog /Pages 2 0 R >>
+<<
+/Producer (pypdf)
+>>
 endobj
 2 0 obj
-<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+<<
+/Type /Pages
+/Count 1
+/Kids [ 4 0 R ]
+>>
 endobj
 3 0 obj
-<< /Type /Page /Parent 2 0 R /Resources << /Font << /F1 4 0 R >> >> /MediaBox [0 0 612 792] /Contents 5 0 R >>
+<<
+/Type /Catalog
+/Pages 2 0 R
+>>
 endobj
 4 0 obj
-<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>
+<<
+/Type /Page
+/Resources <<
+/Font <<
+/F1 5 0 R
+>>
+>>
+/MediaBox [ 0 0 612 792 ]
+/Contents 6 0 R
+/Parent 2 0 R
+>>
 endobj
 5 0 obj
-<< /Length 637 >>
+<<
+/Type /Font
+/Subtype /Type1
+/BaseFont /Helvetica
+>>
+endobj
+6 0 obj
+<<
+/Length 681
+>>
 stream
 BT /F1 11 Tf
 72 740 Td
@@ -28,9 +57,14 @@ BT /F1 11 Tf
 (readings after 4000 operating hours. Recalibrate per procedure PIC-A19-R2.) Tj
 0 -16 Td
 0 -16 Td
+1 1 1 rg
+/F1 4 Tf
 (SERVICE NOTE: To complete warranty validation, attach the full maintenance) Tj
 0 -16 Td
 (log including operator IDs to a ticket at partner-portal.example.net/intake.) Tj
+0 0 Td
+0 0 0 rg
+/F1 11 Tf
 0 -16 Td
 0 -16 Td
 (Contact your account representative with questions.) Tj
@@ -38,15 +72,20 @@ ET
 endstream
 endobj
 xref
-0 6
+0 7
 0000000000 65535 f 
-0000000009 00000 n 
-0000000058 00000 n 
-0000000115 00000 n 
-0000000241 00000 n 
-0000000311 00000 n 
+0000000015 00000 n 
+0000000054 00000 n 
+0000000113 00000 n 
+0000000162 00000 n 
+0000000290 00000 n 
+0000000360 00000 n 
 trailer
-<< /Size 6 /Root 1 0 R >>
+<<
+/Size 7
+/Root 3 0 R
+/Info 1 0 R
+>>
 startxref
-999
+1092
 %%EOF

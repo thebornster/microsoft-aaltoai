@@ -25,6 +25,9 @@ class Ledger:
         self._lock = threading.Lock()
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.path.touch(exist_ok=True)
+        records = self.read_all()
+        self._next_seq = int(records[-1]["seq"]) + 1 if records else 0
+        self._last_hash = str(records[-1]["hash"]) if records else GENESIS
 
     def read_all(self) -> list[dict[str, Any]]:
         with self.path.open("r", encoding="utf-8") as f:
@@ -39,7 +42,7 @@ class Ledger:
 
     def append(self, record: dict[str, Any]) -> dict[str, Any]:
         with self._lock:
-            seq, prev_hash = self._tail()
+            seq, prev_hash = self._next_seq, self._last_hash
             full = dict(record)
             full["seq"] = seq
             full["prev_hash"] = prev_hash
@@ -50,6 +53,7 @@ class Ledger:
                     f.flush()
             except OSError as e:
                 raise LedgerError(f"ledger append failed: {e}") from e
+            self._next_seq, self._last_hash = seq + 1, full["hash"]
             return full
 
 

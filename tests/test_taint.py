@@ -63,6 +63,21 @@ def test_operator_name_entity_match():
     assert matches[0].matched_entities == ["Jukka Nieminen"]
 
 
+def test_surname_and_spaced_employee_id_match():
+    store = TaintStore()
+    store.ingest(
+        source_id="maintenance",
+        text="Fault reported by Jukka Nieminen, operator EMP-4471",
+        trust="trusted",
+        residency="eu_personal",
+        known_names=["Jukka Nieminen"],
+    )
+    matches = store.resolve("Nieminen handled the issue; employee EMP 4471 was present")
+    assert len(matches) == 1
+    assert "Nieminen" in matches[0].matched_entities
+    assert "EMP-4471" in matches[0].matched_entities
+
+
 def test_untrusted_ingested_flag():
     store = TaintStore()
     assert store.untrusted_ingested is False

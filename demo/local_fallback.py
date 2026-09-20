@@ -19,6 +19,7 @@ Usage:
 import os
 import sys
 import uuid
+from urllib.parse import urlparse
 
 import httpx
 
@@ -80,6 +81,7 @@ def step_deny() -> None:
         },
     )
     _assert(ticket.get("isError") is True, "post_supplier_ticket to us-east is denied")
+    _assert(ticket.get("meta", {}).get("backend_invoked") is False, "denied call never invokes the external backend")
     _assert("gdpr-art44-transfer" in ticket.get("error", ""), "denial cites gdpr-art44-transfer")
 
 
@@ -96,7 +98,7 @@ def step_review_and_resume() -> None:
     _assert(first.get("resultType") == "input_required", "session-exposure fallback rule forces REVIEW even without a fingerprint match")
     request_state = first["requestState"]
     approval_url = first["inputRequests"]["raja_approval"]["params"]["url"]
-    approval_id = approval_url.rsplit("/", 1)[-1]
+    approval_id = urlparse(approval_url).path.rstrip("/").rsplit("/", 1)[-1]
 
     _decide(approval_id, "approved")
     resumed = _call(session_id, "post_supplier_ticket", args, request_state=request_state)

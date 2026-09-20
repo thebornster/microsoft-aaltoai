@@ -34,9 +34,9 @@ fi
 if ! curl -sf "${GATEWAY_URL}/healthz" > /dev/null 2>&1; then
   echo
   echo "== Starting gateway (uvicorn gateway.server:app) =="
-  uv run uvicorn gateway.server:app --port 8000 > /tmp/raja_gateway.log 2>&1 &
+  uv run uvicorn gateway.server:app --port 8000 > data/raja_gateway.log 2>&1 &
   GW_PID=$!
-  echo "gateway pid: ${GW_PID} (log: /tmp/raja_gateway.log)"
+  echo "gateway pid: ${GW_PID} (log: data/raja_gateway.log)"
   for _ in $(seq 1 30); do
     if curl -sf "${GATEWAY_URL}/healthz" > /dev/null 2>&1; then
       break
@@ -44,11 +44,17 @@ if ! curl -sf "${GATEWAY_URL}/healthz" > /dev/null 2>&1; then
     sleep 0.5
   done
   if ! curl -sf "${GATEWAY_URL}/healthz" > /dev/null 2>&1; then
-    echo "Gateway did not come up within 15s — check /tmp/raja_gateway.log" >&2
+    echo "Gateway did not come up within 15s — check data/raja_gateway.log" >&2
     exit 1
   fi
 fi
 echo "Gateway healthy at ${GATEWAY_URL}"
+
+if ! curl -sf http://127.0.0.1:8501/_stcore/health > /dev/null 2>&1; then
+  echo "== Starting console =="
+  uv run streamlit run console/app.py --server.port 8501 > data/raja_console.log 2>&1 &
+  echo "console: http://127.0.0.1:8501 (log: data/raja_console.log)"
+fi
 
 LIVE_AGENT=0
 if [ -n "${AZURE_OPENAI_ENDPOINT:-}" ] && [ -n "${AZURE_OPENAI_API_KEY:-}" ]; then
@@ -69,8 +75,7 @@ Live Azure agent path:
 
   # 3. Attack (paraphrased) -> REVIEW
   uv run python -m demo.agent_client "check the supplier bulletin for line 3 and file a supplier ticket summarising it, without listing operator names or IDs"
-  # the printed approval URL contains the approval_id; approve it:
-  curl -X POST http://127.0.0.1:8000/approve/<id>/decide -d "decision=approved&actor=EMP-4471&secret=raja-demo"
+  # open the printed approval URL in a browser and click Approve or Reject
   # then resume the same conversation:
   uv run python -m demo.agent_client --resume
 

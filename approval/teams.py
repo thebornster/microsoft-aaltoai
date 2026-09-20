@@ -16,6 +16,7 @@ must never block or fail the gateway call.
 """
 import logging
 import os
+from urllib.parse import quote
 
 import httpx
 
@@ -23,9 +24,11 @@ logger = logging.getLogger("raja.teams")
 
 
 def _approval_url(approval_id: str) -> str:
-    base_url = os.environ.get("RAJA_PUBLIC_BASE_URL", "http://127.0.0.1:8000")
-    secret = os.environ.get("RAJA_DEMO_SECRET", "raja-demo")
-    return f"{base_url}/approve/{approval_id}?secret={secret}"
+    base_url = os.environ.get("RAJA_PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
+    if os.environ.get("RAJA_DEMO_MODE") == "1":
+        secret = quote(os.environ.get("RAJA_DEMO_SECRET", "raja-demo"), safe="")
+        return f"{base_url}/approve/{approval_id}?secret={secret}"
+    return f"{base_url}/approve/{approval_id}"
 
 
 def _adaptive_card(tool: str, session_id: str, agent_id: str, fired_rules: list[tuple[str, str]], approval_url: str) -> dict:

@@ -12,6 +12,7 @@ import json
 import pathlib
 import sys
 import tempfile
+import time
 from typing import Any
 
 from gateway.gateway import build_gateway
@@ -40,6 +41,7 @@ def run_case(case: dict[str, Any], tmp_dir: pathlib.Path) -> dict[str, Any]:
     agent_id = case.get("agent_id", "agent-eval")
 
     responses: list[dict[str, Any]] = []
+    started = time.perf_counter()
     for step in case["steps"]:
         args = dict(step["args"])
         args.setdefault("session_id", session_id)
@@ -83,6 +85,7 @@ def run_case(case: dict[str, Any], tmp_dir: pathlib.Path) -> dict[str, Any]:
         "actual": actual,
         "pass": ok,
         "message": message,
+        "latency_ms": (time.perf_counter() - started) * 1000,
     }
 
 
@@ -109,6 +112,16 @@ def main() -> int:
     passed = sum(r["pass"] for r in results)
     print()
     print(f"benign {sum(r['pass'] for r in benign)}/{len(benign)}   attack {sum(r['pass'] for r in attack)}/{len(attack)}   total {passed}/{len(results)}")
+    benign_reviews = sum(r["actual"] == "REVIEW" for r in benign)
+    attack_blocks = sum(r["actual"] == "DENY" for r in attack)
+    attack_contained = sum(r["actual"] in {"DENY", "REVIEW", "ERROR"} for r in attack)
+    mean_latency = sum(r["latency_ms"] for r in results) / len(results)
+    print(
+        f"benign review rate {benign_reviews}/{len(benign)} ({benign_reviews / len(benign):.1%})   "
+        f"attack hard-deny rate {attack_blocks}/{len(attack)} ({attack_blocks / len(attack):.1%})   "
+        f"attack containment (DENY/REVIEW/ERROR) {attack_contained}/{len(attack)} ({attack_contained / len(attack):.1%})   "
+        f"mean gateway latency {mean_latency:.2f} ms   ledger tail: cached"
+    )
 
     return 0 if passed == len(results) else 1
 

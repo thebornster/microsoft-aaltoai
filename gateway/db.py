@@ -46,6 +46,12 @@ CREATE TABLE IF NOT EXISTS approvals (
     decided_at REAL,
     capability_token TEXT,
     consumed INTEGER NOT NULL DEFAULT 0
+    ,rules_fired TEXT NOT NULL DEFAULT '[]'
+    ,regulations TEXT NOT NULL DEFAULT '[]'
+    ,sources TEXT NOT NULL DEFAULT '[]'
+    ,matched_entities TEXT NOT NULL DEFAULT '[]'
+    ,shingle_overlap INTEGER NOT NULL DEFAULT 0
+    ,arg_labels TEXT NOT NULL DEFAULT '{}'
 );
 CREATE TABLE IF NOT EXISTS consumed_nonces (
     nonce_key TEXT PRIMARY KEY
@@ -55,6 +61,7 @@ CREATE TABLE IF NOT EXISTS consumed_nonces (
 _APPROVAL_COLUMNS = [
     "approval_id", "call_hash", "tool", "session_id", "agent_id", "created_at",
     "exp", "decision", "decided_by", "decided_at", "capability_token", "consumed",
+    "rules_fired", "regulations", "sources", "matched_entities", "shingle_overlap", "arg_labels",
 ]
 
 
@@ -65,6 +72,17 @@ class StateDB:
         self._conn.execute("PRAGMA journal_mode=WAL")
         with self._lock:
             self._conn.executescript(_SCHEMA)
+            existing = {row[1] for row in self._conn.execute("PRAGMA table_info(approvals)")}
+            for name, declaration in (
+                ("rules_fired", "TEXT NOT NULL DEFAULT '[]'"),
+                ("regulations", "TEXT NOT NULL DEFAULT '[]'"),
+                ("sources", "TEXT NOT NULL DEFAULT '[]'"),
+                ("matched_entities", "TEXT NOT NULL DEFAULT '[]'"),
+                ("shingle_overlap", "INTEGER NOT NULL DEFAULT 0"),
+                ("arg_labels", "TEXT NOT NULL DEFAULT '{}'"),
+            ):
+                if name not in existing:
+                    self._conn.execute(f"ALTER TABLE approvals ADD COLUMN {name} {declaration}")
             self._conn.commit()
 
     def close(self) -> None:
@@ -127,12 +145,15 @@ class StateDB:
     def save_approval(self, approval: Any) -> None:
         with self._lock:
             self._conn.execute(
-                "INSERT OR REPLACE INTO approvals VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                f"INSERT OR REPLACE INTO approvals ({', '.join(_APPROVAL_COLUMNS)}) VALUES ({','.join('?' for _ in _APPROVAL_COLUMNS)})",
                 (
                     approval.approval_id, approval.call_hash, approval.tool, approval.session_id,
                     approval.agent_id, approval.created_at, approval.exp, approval.decision,
                     approval.decided_by, approval.decided_at, approval.capability_token,
                     int(approval.consumed),
+                    json.dumps(approval.rules_fired), json.dumps(approval.regulations),
+                    json.dumps(approval.sources), json.dumps(approval.matched_entities),
+                    approval.shingle_overlap, json.dumps(approval.arg_labels),
                 ),
             )
             self._conn.commit()
@@ -147,6 +168,8 @@ class StateDB:
             return None
         record = dict(zip(_APPROVAL_COLUMNS, row))
         record["consumed"] = bool(record["consumed"])
+        for key in ("rules_fired", "regulations", "sources", "matched_entities", "arg_labels"):
+            record[key] = json.loads(record[key])
         return record
 
     # --- consumed-nonce replay guard ---

@@ -9,6 +9,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 SHINGLE_WIDTH = 5
+SHORT_SHINGLE_WIDTH = 3
 MIN_SHINGLE_OVERLAP = 3
 
 STRUCTURAL_TOKENS = {"{", "}", "[", "]", ":", ",", '"', "'"}
@@ -23,9 +24,10 @@ _WORD_RE = re.compile(r"[A-Za-z0-9_.\-@]+")
 # Operator names are matched separately against the known-operator list
 # supplied by the caller (tools.yaml), since they're multi-token.
 _ENTITY_PATTERNS = [
-    re.compile(r"\bEMP-\d{3,6}\b"),
+    re.compile(r"\bEMP(?:[- ]?)\d{3,6}\b", re.IGNORECASE),
     re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
     re.compile(r"\b[A-Z]{2,4}-\d{3,8}\b"),
+    re.compile(r"\b\d{3,8}\b"),
 ]
 
 
@@ -46,9 +48,19 @@ def extract_entities(text: str, known_names: list[str]) -> set[str]:
         found.update(m.group(0) for m in pattern.finditer(text))
     lowered = text.lower()
     for name in known_names:
+        parts = name.split()
         if name.lower() in lowered:
             found.add(name)
+        for part in parts[1:]:
+            if len(part) >= 4 and re.search(rf"\b{re.escape(part)}\b", text, re.IGNORECASE):
+                found.add(part)
+    # Canonicalize employee identifiers so EMP 4471 and EMP-4471 match.
+    found = {re.sub(r"^EMP[ -]", "EMP-", value, flags=re.IGNORECASE) for value in found}
     return found
+
+
+def shingles_for_tokens(tokens: list[str]) -> set[tuple[str, ...]]:
+    return shingles(tokens, SHORT_SHINGLE_WIDTH if len(tokens) < SHINGLE_WIDTH else SHINGLE_WIDTH)
 
 
 def flatten_to_text(value: Any) -> str:
@@ -118,7 +130,7 @@ class TaintStore:
             source_id=source_id,
             trust=trust,
             residency=residency,
-            shingle_index=shingles(tokenize(text)),
+            shingle_index=shingles_for_tokens(tokenize(text)),
             entities=extract_entities(text=text, known_names=known_names or []),
         )
         self.sources[source_id] = entry
@@ -139,7 +151,7 @@ class TaintStore:
     def resolve(self, value: Any) -> list[MatchResult]:
         text = flatten_to_text(value)
         arg_tokens = tokenize(text)
-        arg_shingles = shingles(arg_tokens)
+        arg_shingles = shingles_for_tokens(arg_tokens)
         arg_entities = extract_entities(text=text, known_names=[])
         lowered = text.lower()
 
@@ -149,6 +161,18 @@ class TaintStore:
             matched_entities = sorted(
                 e for e in entry.entities if e in arg_entities or e.lower() in lowered
             )
+            # Prefer the complete identifier when its more specific form is
+            # present; the numeric component is only a fallback.
+            full_emp = {e.lower() for e in matched_entities if e.lower().startswith("emp-")}
+            if full_emp:
+                matched_entities = [
+                    e for e in matched_entities
+                    if not (e.isdigit() and f"emp-{e}".lower() in full_emp)
+                ]
+            full_names = [e for e in matched_entities if " " in e]
+            if full_names:
+                surnames = {e.rsplit(" ", 1)[-1].lower() for e in full_names}
+                matched_entities = [e for e in matched_entities if e.lower() not in surnames]
             if len(overlap) >= MIN_SHINGLE_OVERLAP or matched_entities:
                 results.append(
                     MatchResult(

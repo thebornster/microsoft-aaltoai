@@ -3,6 +3,7 @@ verify-chain button that names the exact sequence number where a
 tampered ledger breaks. This is P0 — "show, don't claim" fails without it.
 """
 import pathlib
+import time
 
 import streamlit as st
 
@@ -117,6 +118,7 @@ def _run_app() -> None:
     with col_refresh:
         if st.button("Refresh"):
             st.rerun()
+        auto_refresh = st.checkbox("Auto-refresh (2s)", value=True)
 
     records = _load_records()
     engine = _policy_engine()
@@ -164,6 +166,23 @@ def _run_app() -> None:
         with right:
             st.subheader("Lineage")
             rec = next(r for r in records if r["seq"] == selected_seq)
+            decision = rec.get("decision", "UNKNOWN")
+            if decision == "DENY":
+                st.error("BLOCKED BEFORE EGRESS — backend was not invoked")
+            elif decision == "REVIEW":
+                st.warning("HELD FOR HUMAN REVIEW — backend was not invoked")
+            elif decision == "ALLOW":
+                st.success("ALLOWED — backend invoked after policy evaluation")
+            st.subheader("Incident evidence")
+            evidence = {
+                "decision": decision,
+                "backend_invoked": rec.get("backend_invoked", decision == "ALLOW"),
+                "destination": rec.get("destination_region") or "local/internal",
+                "sources": ", ".join((rec.get("arg_labels") or {}).get("sources", [])) or "none",
+                "rules": ", ".join(rec.get("rules_fired") or []) or "none",
+                "ledger_seq": rec.get("seq"),
+            }
+            st.json(evidence)
             origins = _origin_index(records)
             st.graphviz_chart(_lineage_dot(rec, origins, rule_lookup), use_container_width=True)
             st.write(f"**Tool:** {rec['tool']}  &nbsp; **Decision:** {_decision_badge(rec['decision'])}")
@@ -192,6 +211,10 @@ def _run_app() -> None:
 
             st.write("**Hash chain:**")
             st.code(f"prev_hash: {rec.get('prev_hash')}\nhash:      {rec.get('hash')}", language=None)
+
+    if auto_refresh:
+        time.sleep(2)
+        st.rerun()
 
 
 if __name__ == "__main__":

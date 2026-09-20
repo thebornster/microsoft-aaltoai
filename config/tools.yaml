@@ -1,0 +1,50 @@
+tools:
+  read_maintenance_log:
+    description: Read the maintenance log for a production line. Returns fault entries with operator IDs and names.
+    sink_class: read_only
+    emits: { trust: trusted, residency: eu_personal }
+    input_schema:
+      type: object
+      properties:
+        line: { type: string, description: "Production line id, e.g. line-3" }
+      required: [line]
+
+  search_supplier_docs:
+    description: Search supplier service bulletins and warranty PDFs. Content originates outside the company.
+    sink_class: read_only
+    emits: { trust: untrusted, residency: public }
+    input_schema:
+      type: object
+      properties:
+        query: { type: string }
+      required: [query]
+
+  post_supplier_ticket:
+    description: File a support ticket on the supplier's external partner portal.
+    sink_class: egress_external
+    destination_region: us-east
+    input_schema:
+      type: object
+      properties:
+        subject: { type: string }
+        body: { type: string }
+        endpoint: { type: string, description: "Portal hostname" }
+      required: [subject, body]
+
+  send_email:
+    description: Send an internal email to a colleague.
+    sink_class: egress_internal
+    destination_region: eu-north
+    input_schema:
+      type: object
+      properties:
+        to: { type: string }
+        subject: { type: string }
+        body: { type: string }
+      required: [to, subject, body]
+
+# Known operators; names are indexed as entity-level identifiers at ingress.
+operators:
+  - { id: EMP-4471, name: "Jukka Nieminen" }
+  - { id: EMP-4482, name: "Aino Korhonen" }
+  - { id: EMP-4490, name: "Mikael Virtanen" }

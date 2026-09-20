@@ -1,0 +1,34 @@
+version: 1
+eu_regions: [eu-north, eu-west, eu-central, swedencentral, norwayeast]
+rules:
+  - id: nis2-art21-untrusted-egress
+    regulation: "NIS2 Art. 21(2)(e) - supply chain and untrusted input control"
+    description: Untrusted-derived data may not drive an external egress call without human review
+    when:
+      arg_labels.trust: untrusted
+      tool.sink_class: egress_external
+    then: review
+
+  - id: gdpr-art44-transfer
+    regulation: "GDPR Art. 44 - general principle for transfers"
+    description: EU personal data may not reach a non-EU destination
+    when:
+      arg_labels.residency: eu_personal
+      tool.destination_region: non_eu
+    then: deny
+
+  - id: aiact-art14-cross-source
+    regulation: "EU AI Act Art. 14 - human oversight (applies Dec 2027, designing ahead)"
+    description: Untrusted content steering a call that carries personal data
+    when:
+      arg_labels.trust: untrusted
+      arg_labels.residency: eu_personal
+    then: review
+
+  - id: nis2-art21-session-exposure
+    regulation: "NIS2 Art. 21(2)(e) - supply chain and untrusted input control"
+    description: Untrusted content was ingested this session; external egress needs review even without a fingerprint match
+    when:
+      session.untrusted_ingested: true
+      tool.sink_class: egress_external
+    then: review

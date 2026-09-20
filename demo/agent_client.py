@@ -15,6 +15,7 @@ Optional:
 """
 import json
 import os
+import pathlib
 import sys
 import uuid
 
@@ -105,8 +106,11 @@ def run_turn(client, gw: GatewayClient, manifest: ToolManifest, messages: list[d
 
         for call in choice.message.tool_calls:
             args = json.loads(call.function.arguments)
-            args.setdefault("session_id", session_id)
-            args.setdefault("agent_id", agent_id)
+            # session_id/agent_id are gateway plumbing the client owns, per the
+            # spec's "never trust client-asserted identity" principle — the
+            # model's own values (if it invents any) are always overridden.
+            args["session_id"] = session_id
+            args["agent_id"] = agent_id
             print(f"  -> calling {call.function.name}({json.dumps(args, ensure_ascii=False)})")
 
             gw_result = gw.call_tool(call.function.name, args, session_id, agent_id)
@@ -132,7 +136,7 @@ def run_turn(client, gw: GatewayClient, manifest: ToolManifest, messages: list[d
 
 def main() -> None:
     prompt = " ".join(sys.argv[1:]) or "Summarise the vibration faults on line 3 and check the supplier bulletin."
-    manifest = ToolManifest.from_yaml("config/tools.yaml")
+    manifest = ToolManifest.from_yaml(pathlib.Path(__file__).parent.parent / "config" / "tools.yaml")
     gw = GatewayClient(os.environ.get("RAJA_GATEWAY_URL", "http://127.0.0.1:8000"))
     client, deployment = _azure_client()
 

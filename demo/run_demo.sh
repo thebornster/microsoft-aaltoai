@@ -13,6 +13,12 @@ cd "$(dirname "$0")/.."
 
 GATEWAY_URL="${RAJA_GATEWAY_URL:-http://127.0.0.1:8000}"
 
+if [ -z "${RAJA_SERVER_KEY:-}" ]; then
+  echo "No RAJA_SERVER_KEY set — running with RAJA_DEMO_MODE=1 (insecure demo defaults)."
+  echo "Do not run this way against anything but the local demo."
+  export RAJA_DEMO_MODE=1
+fi
+
 if [ "${RAJA_RESET_DEMO_STATE:-0}" = "1" ]; then
   echo "Resetting demo state (data/ledger.jsonl, data/agent_pending.json, data/state.db* only)..."
   rm -f data/ledger.jsonl data/agent_pending.json data/state.db data/state.db-wal data/state.db-shm

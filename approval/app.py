@@ -4,17 +4,27 @@ The MCP agent is structurally incapable of answering this: it only ever
 sees a URL and can retry the original call to discover the outcome. A
 human must open this page and click Approve/Reject themselves.
 
-Demo auth: a shared secret query param. Production: Entra sign-in.
+Demo auth: a shared secret query param, required to be explicitly configured
+(RAJA_DEMO_SECRET) unless RAJA_DEMO_MODE=1 — see gateway/env.py. Production:
+Entra sign-in (not implemented; this page's shared-secret scheme is a
+demo-only stand-in for that).
 """
-import os
-
 from fastapi import APIRouter, FastAPI, Form, HTTPException, Query
 from fastapi.responses import HTMLResponse
 
 from approval.tokens import TokenError
+from gateway.env import is_demo_mode
+from gateway.env import require_secret as _require_configured_secret
 from gateway.instance import gateway
 
-DEMO_SECRET = os.environ.get("RAJA_DEMO_SECRET", "raja-demo")
+DEMO_SECRET = _require_configured_secret("RAJA_DEMO_SECRET", "raja-demo")
+_DEMO_BANNER = (
+    '<p style="background:#fff3cd;color:#664d03;padding:0.5rem 0.75rem;'
+    'border-radius:6px;font-size:0.9rem;">DEMO MODE — using a well-known '
+    "shared secret, not real authentication.</p>"
+    if is_demo_mode()
+    else ""
+)
 
 router = APIRouter()
 
@@ -42,12 +52,13 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
     _require_secret(secret)
     approval = gateway.approval_store.get(approval_id)
     if approval is None:
-        return _page("<h1>Unknown approval</h1>")
+        return _page(f"{_DEMO_BANNER}<h1>Unknown approval</h1>")
 
     if approval.decision != "pending":
-        return _page(f"<h1>Already {approval.decision}</h1><p>by {approval.decided_by}</p>")
+        return _page(f"{_DEMO_BANNER}<h1>Already {approval.decision}</h1><p>by {approval.decided_by}</p>")
 
     return _page(f"""
+{_DEMO_BANNER}
 <h1>Raja: human approval required</h1>
 <p><strong>Tool:</strong> {approval.tool}</p>
 <p><strong>Session:</strong> {approval.session_id} &nbsp; <strong>Agent:</strong> {approval.agent_id}</p>

@@ -13,9 +13,9 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 1. ~~**P0 — Demo reliability and truthful evidence.**~~ **Done this checkpoint** — see below.
 2. ~~**P0 — Use the PDF as the runtime source.**~~ **Done previous checkpoint** — see below.
 3. ~~**P1 — Close the protocol honesty gap.**~~ **Done previous checkpoint** — see "Gate 3" section below.
-4. ~~**P1 — Make state and identity claims precise.**~~ **Done this checkpoint** — see "Gate 4" section below.
-5. **P1 — Remove unsafe-looking defaults from the normal path.** **← NEXT.** Require `RAJA_SERVER_KEY` and approval authentication in production mode; fail closed when absent. Keep demo defaults only behind an explicit `RAJA_DEMO_MODE=1`, visibly labeled as demo-only. Add tests for missing-key and unauthorized-approval behavior.
-6. **P1 — Strengthen judge evidence.** Add structured decision metadata to the response (`decision`, `rules_fired`, `regulations`, `sources`, `matched_entities`, `shingle_overlap`) instead of requiring consumers to parse human-readable error text. Add console tests for lineage and residency DOT generation, and a tamper test that demonstrates the exact broken sequence.
+4. ~~**P1 — Make state and identity claims precise.**~~ **Done previous checkpoint** — see "Gate 4" section below.
+5. ~~**P1 — Remove unsafe-looking defaults from the normal path.**~~ **Done this checkpoint** — see "Gate 5" section below.
+6. **P1 — Strengthen judge evidence.** **← NEXT.** Add structured decision metadata to the response (`decision`, `rules_fired`, `regulations`, `sources`, `matched_entities`, `shingle_overlap`) instead of requiring consumers to parse human-readable error text. Add console tests for lineage and residency DOT generation, and a tamper test that demonstrates the exact broken sequence.
 7. **P2 — Validate integrations and rehearse.** If a real Power Automate Workflows URL is available, test the Adaptive Card end to end; otherwise demonstrate the redacted payload locally and say “not live-connected.” Run the full demo from a clean shell, time it, record a fallback capture, and test the second-use rejection of a consumed requestState.
 8. **P2 — Package the proof.** Add a concise judge-facing `DEMO.md` (commands, expected outputs, claims that are and are not made), a threat-model slide, an architecture/data-residency slide, and a 90-second fallback recording. Present Raja as complementary to Microsoft governance: static identity/scope is necessary; per-call provenance and destination policy close the confused-deputy gap.
 
@@ -58,10 +58,16 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 - **Identity derivation is NOT changed in this checkpoint.** `session_id`/`agent_id` are still client-supplied (per the existing "client, not the model, owns these" decision — see Key decisions). Deriving `agent_id` from a real authenticated boundary (e.g. mTLS client cert, signed JWT) was explicitly out of scope for gate 4 as originally worded ("retain client-owned IDs only in the demo adapter") because there is no real multi-tenant auth boundary in this single-process hackathon deployment to derive it from — introducing one would be new, unrequested infrastructure. **Documented limitation, not fixed:** in the current deployment shape, `agent_id`/`session_id` are trusted client assertions; a production deployment would need to bind them to an authenticated transport-layer identity (mTLS client cert CN, or a verified JWT `sub`) rather than trusting request body fields. This is the single most important trust boundary to close before this could run against a real (non-demo) agent fleet.
 - **Single-process limitation, explicitly documented (not removed):** `StateDB` uses one SQLite connection behind one Python `threading.Lock`, which is correct for the single `uvicorn` worker this project runs as, but would not scale to multiple worker processes/replicas without moving to a real server-backed store (Postgres, etc.) — SQLite's file-level locking does not arbitrate across independent OS processes safely under concurrent writers the way this in-process lock arbitrates across threads within one process.
 
+**Gate 5 done (this checkpoint):** the two insecure-looking defaults on the normal path (`RAJA_SERVER_KEY` and the approval page's `RAJA_DEMO_SECRET`) no longer silently apply — they now require `RAJA_DEMO_MODE=1` to be set explicitly, or the process fails to start. `gateway/env.py`'s `require_secret(env_var, demo_default)` returns the real env value if set; otherwise, if `RAJA_DEMO_MODE=1`, returns the demo default; otherwise raises `ConfigError` (fail closed) — no code path returns an insecure default without that explicit opt-in. `gateway/instance.py` now computes `SERVER_KEY` via `require_secret("RAJA_SERVER_KEY", "dev-only-insecure-key")` and logs a `WARNING` at import time when demo mode is active; `approval/app.py` computes `DEMO_SECRET` the same way and renders a visible yellow "DEMO MODE — using a well-known shared secret, not real authentication" banner on the approval page whenever demo mode is on, so a judge looking at the page itself sees the caveat, not just the source code.
+- **`demo/run_demo.sh`** now checks whether `RAJA_SERVER_KEY` is already set in the environment; if not, it prints an explicit warning ("running with RAJA_DEMO_MODE=1 ... do not run this way against anything but the local demo") and exports `RAJA_DEMO_MODE=1` itself before starting `uvicorn gateway.server:app`, so the one-command demo path keeps working without the judge needing to know about this env var, while still being honest that it's the demo path.
+- **`tests/conftest.py` sets `RAJA_DEMO_MODE=1`** for the whole test suite, since several existing tests (`test_server_mount.py`, `test_approval_app.py`, `test_mcp_transport.py`) import the real `gateway.instance`/`gateway.server` singleton directly (an established convention — see Gate 3/4 notes) and would otherwise fail to import at collection time.
+- **New test `tests/test_env_config.py`** (7 cases): unit-level coverage of `require_secret`/`is_demo_mode` (env value wins, fails closed without demo mode, demo default only under `RAJA_DEMO_MODE=1`, exact-value match for the flag), plus three subprocess-level tests that actually `import gateway.instance` in a clean child process with a controlled environment — confirming it exits non-zero with `RAJA_SERVER_KEY` in the error when neither `RAJA_SERVER_KEY` nor `RAJA_DEMO_MODE=1` is set, and exits zero when either is provided. Subprocess (not in-process reload) was necessary because `SERVER_KEY`/`DEMO_SECRET` are computed once at module import as top-level constants. Unauthorized-approval behavior (wrong/missing secret rejected with 403) was already covered by the pre-existing `tests/test_approval_app.py::test_wrong_secret_is_forbidden`, unchanged by this checkpoint.
+- **Not done, out of scope for gate 5 as worded:** real "approval authentication" beyond a shared secret (e.g. Entra sign-in) — the design doc and `approval/app.py`'s own docstring already name this as the production replacement; gate 5's ask was to stop the *current* shared-secret scheme from having a silent insecure default, not to build real SSO.
+
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback
 
-Tests: 50 passing, `uv run pytest -q`. No known failing or flaky tests.
+Tests: 57 passing, `uv run pytest -q`. No known failing or flaky tests.
 
 ## Key decisions made (not obvious from re-reading the code)
 
@@ -113,10 +119,12 @@ For development/manual control:
 
 ```bash
 cd /Users/borna/hackathon-microsoft
-uv run pytest -q                                    # 50 tests, should be green
+uv run pytest -q                                    # 57 tests, should be green
 uv run python -m eval.run_suite                     # eval suite pass/fail table (12/12 should pass)
 
 # ONE process serves both /mcp/call and /approve/* — do not also start approval.app:app separately
+# RAJA_SERVER_KEY unset -> fails closed unless RAJA_DEMO_MODE=1 is set explicitly (gate 5)
+export RAJA_DEMO_MODE=1
 uv run uvicorn gateway.server:app --port 8000 &
 
 # live agent needs Azure OpenAI creds

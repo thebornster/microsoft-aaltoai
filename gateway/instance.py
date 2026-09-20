@@ -11,6 +11,7 @@ instead of one importing the other.
 import os
 import pathlib
 
+from approval.teams import notify_review
 from gateway.gateway import RajaGateway, build_gateway
 
 ROOT = pathlib.Path(__file__).parent.parent
@@ -21,3 +22,4 @@ gateway: RajaGateway = build_gateway(
     ledger_path=ROOT / "data" / "ledger.jsonl",
     server_key=SERVER_KEY,
 )
+gateway.on_review = notify_review

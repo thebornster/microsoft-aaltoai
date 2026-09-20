@@ -8,13 +8,13 @@ Full design/architecture/pitch: `raja-design-doc.md`. This file is the "where ar
 
 ## NEXT ACTION (read this first)
 
-P0 and P1 are both fully done and fully live-demoed (see below). The eval suite (P2 item 1) is now done too. Nothing is broken, all tests green (34, up from 33). The next unit of work — pick this up with no further questions unless you hit a real blocker:
+P0 and P1 are both fully done and fully live-demoed (see below). Both P2 eval-suite and Teams-card items are now done too. Nothing is broken, all tests green (40, up from 34). The next unit of work — pick this up with no further questions unless you hit a real blocker:
 
-1. **Teams Adaptive Card / Power Automate webhook** (P2, polish — the approval page alone already satisfies the HITL requirement, so this is nice-to-have, not blocking).
-2. Console polish (lineage graph, residency diagram) and the real `demo/bulletin_A19.pdf` (currently a `.txt` stand-in) are lowest priority — only do these if there's time left after the Teams card.
-3. Foundry Local semantic fallback is P3 and explicitly optional — do not start it unless asked directly.
+1. **Console polish** (lineage graph, residency diagram) and the real `demo/bulletin_A19.pdf` (currently a `.txt` stand-in) are what's left of P2 — lowest priority of what remains, do these next if there's time.
+2. Foundry Local semantic fallback is P3 and explicitly optional — do not start it unless asked directly.
+3. The Teams webhook has never been fired against a real Power Automate Workflows URL (no `RAJA_TEAMS_WEBHOOK_URL` configured in this environment) — it's unit-tested with a mocked `httpx.post`, not live-verified against real Teams. Only chase a live Teams test if a judge specifically asks to see the card render, and you'd need a real Workflows webhook URL from the user first.
 
-If you get here and disagree that the Teams card should be next, say so and explain why before switching — otherwise just start it.
+If you get here and disagree that console polish should be next, say so and explain why before switching — otherwise just start it.
 
 ## Build status vs. the design doc's priority list
 
@@ -36,16 +36,16 @@ If you get here and disagree that the Teams card should be next, say so and expl
 - Session-exposure fallback rule (`nis2-art21-session-exposure` in `config/policy.yaml`)
 - `verify_ledger.py`
 
-**P2 — eval suite done, rest not started (see NEXT ACTION):**
+**P2 — eval suite and Teams card done, rest not started (see NEXT ACTION):**
 - Eval suite done: `eval/factory_suite.json` (12 declarative cases, 6 benign / 6 attack) + `eval/run_suite.py` (runner, prints a pass/fail table, `uv run python -m eval.run_suite`), wrapped by `tests/test_eval_suite.py` so it runs under pytest too. See "Eval suite" section below for design notes.
-- Teams Adaptive Card / Power Automate Workflows webhook — **do this next**
-- Console polish (lineage graph, residency diagram)
+- Teams Adaptive Card / Power Automate Workflows webhook done: `approval/teams.py`. See "Teams notification" section below for design notes.
+- Console polish (lineage graph, residency diagram) — **do this next**
 - Real `demo/bulletin_A19.pdf` (currently `demo/bulletin_A19.txt`, same injected payload text, no PDF-writer dependency added)
 
 **P3 — explicitly optional, do not start unassigned:**
 - Foundry Local semantic fallback
 
-Tests: 34 passing, `uv run pytest -q`. No known failing or flaky tests.
+Tests: 40 passing, `uv run pytest -q`. No known failing or flaky tests.
 
 ## Key decisions made (not obvious from re-reading the code)
 
@@ -62,6 +62,15 @@ Tests: 34 passing, `uv run pytest -q`. No known failing or flaky tests.
 - **Scripted against `gateway.call()` directly, not through the LLM.** Per the design doc's own distinction ("the scripted client is a gateway regression harness, never the demo"), the eval suite is that harness formalized: `eval/factory_suite.json` declares 12 cases (tool + args steps, expected final decision, optionally expected fired-rule ids or an error substring), `eval/run_suite.py` replays each case's steps through a fresh `RajaGateway` (isolated tmp ledger + session per case) and classifies the final response as ALLOW/REVIEW/DENY/ERROR. No AgentDojo package dependency was added — the 2026 AgentDojo harness shape (declarative task suite, benign vs. attack split, pass/fail table) was borrowed, not the library itself, since the gateway's decision logic is deterministic and framework-agnostic already (see `gateway/gateway.py`'s own docstring). Revisit only if a judge specifically wants literal `ethz-spylab/agentdojo` integration.
 - **12 cases, 6 benign / 6 attack, all passing:** benign covers plain read-only calls, an untainted egress (internal and external), trusted eu_personal data flowing to an internal EU sink (allowed — only non-EU destinations are restricted), and untrusted content ingested but egressed only internally (session-fallback rule is scoped to `egress_external` only, confirmed here). Attack covers: injected-bulletin narrative producing a hard DENY (`a1`), the same DENY with no injection framing at all — pure data exfil (`a2`, isolates `gdpr-art44-transfer` alone), a verbatim bulletin span tripping the exact-shingle matcher into REVIEW (`a3`), a paraphrased ticket that dodges both matchers but still gets caught by the session-exposure fallback rule (`a4` — the same scenario that was live-demoed), a multi-hop case where untrusted bulletin text and eu_personal log data are ingested via two separate prior calls and combined in a third call's egress (`a5` — the only case that exercises `aiact-art14-cross-source`, though it's always dominated by the DENY-severity `gdpr-art44-transfer` once eu_personal residency is involved, since the manifest has no residency tier between `public` and `eu_personal` — noted as an observation, not something to fix), and a capability-token tamper test where a retry swaps in different args than the ones bound to `requestState` (`a6` — confirms the hash-mismatch check runs before the approval-state check, so tampering is rejected structurally, not just by convention).
 - **`rules_fired` / `error_contains` assertions are substring checks against the response text**, not a structured field — the gateway's DENY/REVIEW responses embed fired rule ids in the human-readable `error`/`message` string (`gateway/gateway.py`'s `fired_desc`/`fired` construction), there's no separate machine-readable rules array on the wire. Fine for a regression harness; would need a real field if this ever needs to be machine-consumed by something other than this suite.
+
+## Teams notification
+
+- **`approval/teams.py` is a best-effort side-notification, not part of the HITL gate.** The approval page (`/approve/{id}`) is still the actual authority — REVIEW/DENY/ALLOW is decided there regardless of whether Teams delivery succeeds. `notify_review()` catches its own `httpx.HTTPError` and logs a warning rather than raising, and the hook that calls it in `gateway/gateway.py`'s REVIEW branch wraps the call in a bare `try/except Exception` too, so a Teams outage can never turn into a blocked gateway call. This matches the design doc's own P2 framing: "the approval page alone already satisfies the HITL requirement."
+- **Wired as an optional constructor attribute (`RajaGateway.on_review`), not hardcoded into `gateway.py`.** `build_gateway()`'s signature is unchanged; `gateway/instance.py` sets `gateway.on_review = notify_review` after construction. This keeps `gateway/gateway.py` framework-agnostic and free of any HTTP-side-effect dependency in its default state — every test that calls `build_gateway()` directly (all of `tests/test_gateway.py`, `eval/run_suite.py`) gets `on_review=None` and fires no network calls at all. Only the live server (`gateway/server.py` → `gateway/instance.py`) has it wired in.
+- **Redacted by construction, not by a filter.** `notify_review()`'s signature only takes `approval_id, tool, session_id, agent_id, fired_rules` — there is no call-args/payload parameter to accidentally leak, so the Adaptive Card can't carry raw body content even by mistake. Matches the design doc's edge/cloud split: only metadata crosses to Teams, the payload stays on the local edge.
+- **No O365 Connector, no MessageCard.** Posts a plain Adaptive Card (`type: AdaptiveCard`, schema 1.5) with a single `Action.OpenUrl` action pointing at the approval page, inside the Workflows-expected envelope (`{"type": "message", "attachments": [...]}`), per the design doc's note that O365 Connectors were disabled May 2026 and that interactive buttons don't render for MessageCard via Workflows.
+- **Approval URL is assembled inside `approval/teams.py`, not passed in from `gateway.py`.** `RAJA_PUBLIC_BASE_URL` (default `http://127.0.0.1:8000`) + `RAJA_DEMO_SECRET` (default `raja-demo`, same default `approval/app.py` already uses) are read at call time (not import time, so tests can `monkeypatch.setenv` per-test) and combined into a clickable `.../approve/{id}?secret=...` URL — this keeps secret-handling entirely inside the approval layer rather than spreading it into the policy/gateway core.
+- **Not live-tested against a real Power Automate Workflows webhook** — `RAJA_TEAMS_WEBHOOK_URL` is unset in this environment, so `notify_review()` no-ops (logs and returns) on every real REVIEW in the live demo today. Unit tests mock `httpx.post` to verify the card shape, redaction, and non-blocking-failure behavior. If a judge wants to see the live card, you'll need a real Workflows webhook URL from the user first — do not fabricate one.
 
 ## Bug found and fixed (previous checkpoint)
 
@@ -83,7 +92,7 @@ Not yet tested live: sending a *second* retry with the same already-consumed `re
 
 ```bash
 cd /Users/borna/hackathon-microsoft
-uv run pytest -q                                    # 34 tests, should be green
+uv run pytest -q                                    # 40 tests, should be green
 uv run python -m eval.run_suite                     # eval suite pass/fail table (12/12 should pass)
 
 # ONE process serves both /mcp/call and /approve/* — do not also start approval.app:app separately

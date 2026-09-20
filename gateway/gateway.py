@@ -3,9 +3,10 @@ evaluation, MRTR review round-trip, and ledger recording — framework
 agnostic so it's testable without HTTP. server.py wraps this in FastAPI.
 """
 import datetime
+import logging
 import pathlib
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from approval.tokens import ApprovalStore, TokenError, make_request_state, verify_request_state
 from gateway.backends import BACKENDS, BackendError
@@ -19,6 +20,8 @@ from gateway.taint import TaintStore
 
 APPROVAL_BASE_URL = "https://raja.local/approve"
 PROCESSING_PATH = ["local-edge", "azure-openai:swedencentral"]
+
+logger = logging.getLogger(__name__)
 
 # args keys that carry session plumbing, not egress payload
 _PLUMBING_KEYS = {"session_id", "agent_id"}
@@ -44,6 +47,7 @@ class RajaGateway:
         policy_engine: PolicyEngine,
         ledger: Ledger,
         server_key: bytes,
+        on_review: Callable[..., None] | None = None,
     ) -> None:
         self.manifest = manifest
         self.policy_engine = policy_engine
@@ -51,6 +55,9 @@ class RajaGateway:
         self.server_key = server_key
         self.approval_store = ApprovalStore()
         self.sessions: dict[str, SessionState] = {}
+        # optional REVIEW notification hook (e.g. approval.teams.notify_review),
+        # wired in by gateway/instance.py; never allowed to block or fail a call
+        self.on_review = on_review
 
     def _session(self, session_id: str) -> SessionState:
         if session_id not in self.sessions:
@@ -177,6 +184,18 @@ class RajaGateway:
         )
         req_state = make_request_state(self.server_key, approval.approval_id, ch, approval.exp)
         fired_desc = "; ".join(f"{r.id}: {r.description}" for r in decision.fired_rules)
+
+        if self.on_review is not None:
+            try:
+                self.on_review(
+                    approval_id=approval.approval_id,
+                    tool=tool_def.name,
+                    session_id=session_id,
+                    agent_id=agent_id,
+                    fired_rules=[(r.id, r.regulation) for r in decision.fired_rules],
+                )
+            except Exception as e:
+                logger.warning("on_review notification hook failed (non-blocking): %s", e)
         return {
             "resultType": "input_required",
             "inputRequests": {

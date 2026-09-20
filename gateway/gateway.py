@@ -14,7 +14,7 @@ from approval.tokens import ApprovalStore, TokenError, make_request_state, verif
 from gateway.backends import BACKENDS, BackendError
 from gateway.canonical import call_hash as compute_call_hash
 from gateway.db import StateDB
-from gateway.env import approval_ttl_seconds
+from gateway.env import approval_ttl_seconds, public_approval_links
 from gateway.ledger import Ledger
 from gateway.labeller import ingest_result
 from gateway.manifest import ToolManifest
@@ -158,7 +158,7 @@ class RajaGateway:
             arg_labels={"trust": label.trust, "residency": label.residency, "sources": [source_id]},
             destination_region=None,
             human=None,
-            backend_invoked=False,
+            backend_invoked=True,
         )
         return {"result": result, "meta": _meta("ALLOW", sources=[source_id], backend_invoked=True)}
 
@@ -369,7 +369,7 @@ class RajaGateway:
     @staticmethod
     def _approval_url(approval_id: str) -> str:
         base = os.environ.get("RAJA_PUBLIC_BASE_URL", "http://127.0.0.1:8000").rstrip("/")
-        if os.environ.get("RAJA_DEMO_MODE") == "1":
+        if os.environ.get("RAJA_DEMO_MODE") == "1" or public_approval_links():
             secret = quote(os.environ.get("RAJA_DEMO_SECRET", "raja-demo"), safe="")
             return f"{base}/approve/{approval_id}?secret={secret}"
         return f"{base}/approve/{approval_id}"

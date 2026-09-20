@@ -149,8 +149,9 @@ https://raja-gateway.proudsea-6cbc91b7.swedencentral.azurecontainerapps.io
 (rg `raja-demo`, env `raja-gateway-env`, ACR `caf99923d346acr`, image tag
 `v4`). Verified: `/healthz` 200, MCP `initialize` + `tools/list` over
 streamable HTTP, and `demo.local_fallback` passes all four beats against it
-(ALLOW, DENY, REVIEW+approve+resume, replay rejected). The console and the
-Azure OpenAI agent point at it via `RAJA_GATEWAY_URL`. The secrets
+(ALLOW, DENY, REVIEW+approve+resume, replay rejected). The Azure OpenAI agent and
+`demo.local_fallback` point at it via `RAJA_GATEWAY_URL`; the Streamlit console
+reads the local ledger file only, so `/dashboard` is the deployed evidence view. The secrets
 (`RAJA_SERVER_KEY`, `RAJA_DEMO_SECRET`) were generated at deploy time and live
 only in the Container App; `demo.local_fallback` and the approval page need
 the same `RAJA_DEMO_SECRET` exported locally (`az containerapp secret show`).

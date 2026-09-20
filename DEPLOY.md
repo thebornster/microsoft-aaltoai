@@ -102,6 +102,43 @@ against it (needs the same `RAJA_DEMO_SECRET` exported locally):
 RAJA_GATEWAY_URL="$RAJA_PUBLIC_BASE_URL" uv run python -m demo.local_fallback
 ```
 
+The public deployment also serves the judge-facing product surface at `/` and
+the live control room at `/dashboard`. The dashboard is backed by
+`/dashboard/data`, which exposes only decision metadata and ledger-integrity
+status; it does not expose tool payloads or secrets.
+
+The `/agent` page is the easiest interactive demo: it is a browser-native
+client for the deployed `/mcp/call` surface. Pick a task, watch Raja evaluate
+the calls, open the real approval URL when the REVIEW scenario pauses, click
+Approve, then return and click Continue. Open `/dashboard` afterward to show
+the resulting evidence.
+
+The overview's runtime proof card and `/deployment/data` endpoint are generated
+from the running container. They show the live Azure Container Apps hostname,
+region, revision tag, MCP endpoint, tool count, and ledger status. The
+deployment sets `RAJA_PUBLIC_APPROVAL_LINKS=1` so the browser's URL-mode
+approval link opens directly; this is appropriate for the public hackathon
+demo, while a production deployment should replace the shared-secret link
+with Entra authentication.
+
+To populate the deployed dashboard without starting a local server:
+
+```bash
+RAJA_DEMO_SECRET="$RAJA_DEMO_SECRET" ./demo/run_deployed_demo.sh
+```
+
+The helper runs the same four-beat HTTP fallback against the public HTTPS
+gateway. If the original secret is unavailable, rotate only the approval
+secret and update the Container App:
+
+```bash
+export RAJA_DEMO_SECRET="$(openssl rand -hex 32)"
+az containerapp secret set --name raja-gateway --resource-group raja-demo \
+  --secrets raja-demo-secret="$RAJA_DEMO_SECRET"
+az containerapp update --name raja-gateway --resource-group raja-demo \
+  --set-env-vars RAJA_DEMO_SECRET=secretref:raja-demo-secret
+```
+
 Do not enable `RAJA_DEMO_MODE` in the deployment; startup must fail closed
 unless explicit secrets are present.
 
@@ -115,6 +152,6 @@ loses local ledger and approval state on replacement. A production deployment
 should move state and replay protection to a server-backed database before
 scaling horizontally.
 
-The Streamlit console can be run locally against the deployed gateway by
-setting `RAJA_GATEWAY_URL` to the Container App URL, or deployed as a second
-Container App using the existing `streamlit run console/app.py` command.
+The Streamlit console reads the local `data/ledger.jsonl`, so it only shows
+decisions made by a gateway running on the same machine. For the deployed
+gateway, `/dashboard` is the evidence view; the console is for local runs.

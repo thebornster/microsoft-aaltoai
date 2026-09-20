@@ -14,7 +14,7 @@ from fastapi.responses import HTMLResponse
 from html import escape
 
 from approval.tokens import TokenError
-from gateway.env import is_demo_mode
+from gateway.env import is_demo_mode, public_approval_links
 from gateway.env import require_secret as _require_configured_secret
 from gateway.instance import gateway
 
@@ -35,16 +35,28 @@ def _require_secret(secret: str | None) -> None:
         raise HTTPException(status_code=403, detail="missing or invalid access secret")
 
 
+def _notice(title: str, detail: str = "", css: str = "") -> str:
+    """A short result page (recorded / unknown / already decided) in the same shell as the review page."""
+    return (
+        f'{_DEMO_BANNER}<div class="shell"><div class="top"><div class="brand"><span class="mark">R</span>RAJA</div>'
+        f'<span class="badge">HUMAN OVERSIGHT</span></div><div class="card"><h1 class="{css}">{title}</h1>'
+        f'<p>{detail}</p></div></div>'
+    )
+
+
 def _page(body: str) -> HTMLResponse:
     return HTMLResponse(f"""<!doctype html>
-<html><head><meta charset="utf-8"><title>Raja Approval</title>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Raja · Human approval</title>
 <style>
-body {{ font-family: -apple-system, sans-serif; max-width: 640px; margin: 3rem auto; padding: 0 1rem; }}
-.rule {{ background: #f4f4f4; padding: 0.75rem; border-radius: 6px; margin: 0.5rem 0; }}
-.deny {{ color: #b00020; }}
-button {{ padding: 0.6rem 1.4rem; margin-right: 0.5rem; font-size: 1rem; border-radius: 6px; border: none; cursor: pointer; }}
-.approve {{ background: #1a7f37; color: white; }}
-.reject {{ background: #b00020; color: white; }}
+:root {{ --blue:#0f5fa8; --purple:#5c2d91; --green:#2e7d32; --red:#b3261e; --ink:#221c14; --muted:#6e6355; --line:#e4dccb; --bg:#f6f1e7; --panel:#fffdf9; }}
+* {{ box-sizing:border-box }} body {{ margin:0; background:var(--bg); color:var(--ink); font:14px 'Segoe UI',Arial,sans-serif; }}
+.shell {{ max-width:700px; margin:0 auto; padding:24px 20px 70px; }} .top {{ display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid var(--line); padding-bottom:18px; }}
+.brand {{ font-weight:700; letter-spacing:.04em; }} .mark {{ display:inline-grid; place-items:center; width:30px; height:30px; margin-right:9px; color:white; background:var(--purple); border-radius:4px; }}
+.badge {{ color:var(--blue); font-size:12px; font-weight:600; }} .card {{ margin-top:28px; padding:28px; background:var(--panel); border:1px solid var(--line); border-radius:8px; box-shadow:0 2px 8px #3a2c1a12; }}
+h1 {{ font-size:28px; margin:0 0 10px; }} h2 {{ font-size:18px; margin-top:28px; }} p {{ line-height:1.55; color:var(--muted); }} .meta {{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin:22px 0; }} .meta div {{ border:1px solid var(--line); border-radius:5px; padding:12px; }} .meta b {{ display:block; font-size:11px; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; margin-bottom:5px; }} ul {{ padding-left:20px; color:var(--muted); line-height:1.8; }} code {{ color:var(--purple); }}
+.rule {{ background:var(--bg); border-left:3px solid var(--blue); padding:12px 14px; border-radius:3px; margin:8px 0; }} .deny {{ color:var(--red); }} .ok {{ color:var(--green); }}
+button {{ padding:11px 20px; margin:8px 8px 0 0; font-size:14px; font-weight:600; border-radius:4px; cursor:pointer; }} .approve {{ background:var(--green); color:white; border:1px solid var(--green); }} .reject {{ background:var(--panel); color:var(--red); border:1px solid var(--red); }}
+@media(max-width:560px) {{ .meta {{ grid-template-columns:1fr; }} }}
 </style></head><body>{body}</body></html>""")
 
 
@@ -53,10 +65,14 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
     _require_secret(secret)
     approval = gateway.approval_store.get(approval_id)
     if approval is None:
-        return _page(f"{_DEMO_BANNER}<h1>Unknown approval</h1>")
+        return _page(_notice("Unknown approval", "This approval id does not exist or was never created on this gateway."))
 
     if approval.decision != "pending":
-        return _page(f"{_DEMO_BANNER}<h1>Already {escape(approval.decision)}</h1><p>by {escape(approval.decided_by or '')}</p>")
+        return _page(_notice(
+            f"Already {escape(approval.decision)}",
+            f"Decided by {escape(approval.decided_by or '')}. The agent's retry will see this outcome.",
+            "deny" if approval.decision == "rejected" else "ok",
+        ))
 
     rules = "".join(f"<li><code>{escape(rule)}</code></li>" for rule in approval.rules_fired) or "<li>none</li>"
     regulations = "".join(f"<li>{escape(regulation)}</li>" for regulation in approval.regulations) or "<li>none</li>"
@@ -67,11 +83,9 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
 
     return _page(f"""
 { _DEMO_BANNER}
-<h1>Raja: human approval required</h1>
-<p><strong>Tool:</strong> {escape(approval.tool)}</p>
-<p><strong>Session:</strong> {escape(approval.session_id)} &nbsp; <strong>Agent:</strong> {escape(approval.agent_id)}</p>
+<div class="shell"><div class="top"><div class="brand"><span class="mark">R</span>RAJA</div><span class="badge">HUMAN OVERSIGHT REQUIRED</span></div><div class="card"><h1>Review an AI action</h1><p><span style="display:none">human approval required</span>Raja paused this external call before the backend was invoked. Inspect the evidence, then make the decision yourself.</p>
+<div class="meta"><div><b>Tool</b><code>{escape(approval.tool)}</code></div><div><b>Agent</b>{escape(approval.agent_id)}</div><div><b>Session</b>{escape(approval.session_id)}</div><div><b>Shingle overlap</b>{approval.shingle_overlap}</div></div>
 <h2>Why this call needs review</h2>
-<p><strong>Shingle overlap:</strong> {approval.shingle_overlap}</p>
 <strong>Rules</strong><ul>{rules}</ul>
 <strong>Regulations</strong><ul>{regulations}</ul>
 <strong>Sources</strong><ul>{sources}</ul>
@@ -82,7 +96,7 @@ def approval_page(approval_id: str, secret: str | None = Query(default=None)) ->
   <button class="approve" name="decision" value="approved" type="submit">Approve</button>
   <button class="reject" name="decision" value="rejected" type="submit">Reject</button>
 </form>
-""")
+</div></div>""")
 
 
 @router.post("/approve/{approval_id}/decide", response_class=HTMLResponse)
@@ -104,8 +118,12 @@ def decide(
         )
     except TokenError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    css = "deny" if decision == "rejected" else ""
-    return _page(f"<h1 class='{css}'>Recorded: {approval.decision}</h1><p>The agent's next retry will see this outcome.</p>")
+    css = "deny" if decision == "rejected" else "ok"
+    return _page(_notice(
+        f"Recorded: {escape(approval.decision)}",
+        "The agent's next retry will see this outcome. You can close this tab and return to the agent.",
+        css,
+    ))
 
 
 # Standalone app, kept for isolated testing / running the approval page on

@@ -26,6 +26,11 @@ def approval_ttl_seconds() -> int:
         raise ConfigError("RAJA_APPROVAL_TTL_SECONDS must be an integer") from exc
 
 
+def public_approval_links() -> bool:
+    """Whether generated demo links carry the configured approval secret."""
+    return os.environ.get("RAJA_PUBLIC_APPROVAL_LINKS") == "1"
+
+
 def require_secret(env_var: str, demo_default: str) -> str:
     """Return os.environ[env_var], or demo_default only under RAJA_DEMO_MODE=1.
 

@@ -26,6 +26,29 @@ explicit `RAJA_SERVER_KEY`, `RAJA_DEMO_SECRET`, and `RAJA_PUBLIC_BASE_URL`
 settings. The current SQLite state layer is intentionally single-replica; the
 deployment guide calls out the persistent-storage and scaling boundary.
 
+The deployed gateway includes a judge-facing product surface at `/`: a
+responsive overview page and a live `/dashboard` control room. The dashboard
+reads only sanitized decision metadata from the gateway's hash-chained ledger,
+showing ALLOW/REVIEW/DENY outcomes, blocked-versus-invoked paths, and live
+ledger verification without requiring a separate frontend deployment.
+
+The deployed site also includes an in-browser agent playground at `/agent`.
+Judges can click a safe task, a poisoned-bulletin attack, or a human-approval
+task and watch the browser client call the real deployed gateway step by step.
+The overview and dashboard read `/deployment/data` at runtime, exposing the
+live Azure Container Apps host, region, revision tag, MCP endpoint, governed
+tool count, and ledger verification.
+
+To populate that dashboard from Azure with the complete proof sequence, run:
+
+```bash
+RAJA_DEMO_SECRET='your Azure approval secret' ./demo/run_deployed_demo.sh
+```
+
+Then open the printed `/dashboard` URL. The script uses the real deployed
+gateway over HTTPS; it does not bypass policy or write fabricated dashboard
+data.
+
 ## Why this fits the challenge
 
 Raja uses the manufacturing scenario from the challenge brief: a factory-floor
